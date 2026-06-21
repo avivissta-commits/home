@@ -67,7 +67,7 @@ const WHO_COLORS = { "אביב": "#2f8f73", "יוסי": "#4f6bd0", "כולם": "
 
 // אוסף אייקונים — 5 מכל קטגוריה, כל חמישייה מכסה כמה שיותר סוגים שונים
 const SHOPPING_EMOJIS = [
-  { label: "אוכל", items: ["🍞", "🥛", "🍎", "🥦", "☕"] },           // מאפה, חלב, פרי, ירק, שתייה
+  { label: "אוכל", items: ["🍚", "🥛", "🍎", "🥦", "☕"] },           // אורז, חלב, פרי, ירק, שתייה
   { label: "טיפוח ותרופות", items: ["💊", "🩹", "🪥", "🧴", "🪒"] }, // תרופה, פצע, שיניים, שיער/עור, גילוח
   { label: "ניקיון", items: ["🧻", "🧽", "🧹", "🧺", "🗑️"] },        // נייר, כלים, רצפה, כביסה, פסולת
   { label: "בית", items: ["🛋️", "💡", "🪴", "🔨", "🕯️"] },          // רהיט, תאורה, צמח, כלי עבודה, נר
@@ -392,15 +392,39 @@ function Collapsible({ open, children }) {
   );
 }
 
-/* Bottom sheet כללי */
+/* Bottom sheet כללי — סגירה בלחיצה על הרקע או בגרירה מטה */
 function Sheet({ open, title, onClose, children }) {
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const startY = useRef(null);
+
+  const onDown = (e) => {
+    startY.current = e.clientY;
+    setDragging(true);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onMove = (e) => {
+    if (startY.current == null) return;
+    const dy = e.clientY - startY.current;
+    setDragY(dy > 0 ? dy : dy * 0.2); // מעט גמישות כלפי מעלה
+  };
+  const onUp = () => {
+    if (startY.current == null) return;
+    startY.current = null;
+    setDragging(false);
+    if (dragY > 110) onClose();
+    setDragY(0);
+  };
+
+  const fade = open ? 0.28 * Math.max(0, 1 - dragY / 320) : 0;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center"
       style={{
         pointerEvents: open ? "auto" : "none",
-        background: open ? "rgba(40,55,48,0.28)" : "rgba(40,55,48,0)",
-        transition: "background 280ms ease",
+        background: `rgba(40,55,48,${fade})`,
+        transition: dragging ? "none" : "background 280ms ease",
       }}
       onClick={onClose}
     >
@@ -409,12 +433,21 @@ function Sheet({ open, title, onClose, children }) {
         className="w-full max-w-[400px] rounded-t-3xl px-5 pt-3 pb-7"
         style={{
           ...glass({ background: "rgba(248,250,248,0.85)" }),
-          transform: open ? "translateY(0)" : "translateY(102%)",
-          transition: "transform 340ms cubic-bezier(0.22,1,0.36,1)",
+          transform: open ? `translateY(${Math.max(dragY, 0)}px)` : "translateY(102%)",
+          transition: dragging ? "none" : "transform 340ms cubic-bezier(0.22,1,0.36,1)",
         }}
       >
-        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full" style={{ background: "rgba(120,140,130,0.4)" }} />
-        <h3 className="text-center font-bold text-stone-700 mb-4">{title}</h3>
+        {/* אזור אחיזה לגרירה — הידית והכותרת */}
+        <div
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+          style={{ touchAction: "none", cursor: "grab" }}
+        >
+          <div className="mx-auto mb-3 h-1.5 w-10 rounded-full" style={{ background: "rgba(120,140,130,0.45)" }} />
+          <h3 className="text-center font-bold text-stone-700 mb-4 select-none">{title}</h3>
+        </div>
         {children}
       </div>
     </div>
@@ -816,20 +849,20 @@ export default function ShoppingList() {
       {/* שורה תחתונה: כפתור + מימין (מנותק) · תפריט טאבים משמאל */}
       <div className="fixed bottom-4 left-0 right-0 z-40">
         <div className="mx-auto max-w-[400px] px-3.5 flex items-center justify-between gap-2">
-          {/* כפתור הוספה — בצד ימין, מותאם לטאב הנוכחי */}
+          {/* כפתור הוספה — עיגול עם + , מותאם לטאב הנוכחי */}
           <button
             onClick={openAdd}
             aria-label={`הוסף ${cfg.word}`}
-            className="flex items-center gap-2 rounded-full px-5 h-12 font-bold text-white transition-transform active:scale-95"
+            className="shrink-0 grid place-items-center rounded-full transition-transform active:scale-90"
             style={{
+              width: 52, height: 52,
               background: "linear-gradient(180deg, #4ea27a, #3c7f5f)",
               boxShadow: "0 10px 26px -8px rgba(60,127,95,0.6), inset 0 1px 0 rgba(255,255,255,0.4)",
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round">
               <path d="M12 5v14M5 12h14" />
             </svg>
-            הוסף {cfg.word}
           </button>
 
           {/* תפריט טאבים — Liquid Glass */}
