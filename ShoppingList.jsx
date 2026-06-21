@@ -1,4 +1,4 @@
-import { useState, useLayoutEffect, useRef, useMemo } from "react";
+import { useState, useLayoutEffect, useEffect, useRef, useMemo } from "react";
 
 /* ------------------------------------------------------------------ *
  *  רשימת קניות — Apple-inspired Liquid Glass
@@ -58,6 +58,31 @@ const seedTasks = [
 ];
 
 const seedItems = [...seedShopping, ...seedTasks];
+
+/* ---- שמירה מקומית (localStorage) — עטוף בהגנה כדי לא להפיל שום סביבה ---- */
+const STORAGE_KEY = "habayit_items_v1";
+
+function loadItems() {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return seedItems;
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return seedItems;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : seedItems;
+  } catch {
+    return seedItems;
+  }
+}
+
+function saveItems(items) {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    }
+  } catch {
+    /* מצב פרטי / סביבה ללא אחסון — פשוט לא שומרים */
+  }
+}
 
 const SHOPPING_CATEGORIES = ["ניקיון", "אוכל", "תרופות", "בית", "טיפוח"];
 const TASK_CATEGORIES = ["ניקיון", "סידור", "כביסה", "חשבונות", "כללי"];
@@ -546,7 +571,7 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
 /* ----------------------------- אפליקציה --------------------------- */
 
 export default function ShoppingList() {
-  const [items, setItems] = useState(seedItems);
+  const [items, setItems] = useState(loadItems);
   const [tab, setTab] = useState("shopping");
   const [dir, setDir] = useState(0); // כיוון מעבר הטאב: 1 / -1
   const [search, setSearch] = useState("");
@@ -564,6 +589,9 @@ export default function ShoppingList() {
 
   const cfg = TABS.find((t) => t.key === tab);
   const register = useFlip();
+
+  // שמירה אוטומטית בכל שינוי ברשימה
+  useEffect(() => { saveItems(items); }, [items]);
 
   const emptyFilters = { type: null, categories: [], priority: null, status: "all", who: [] };
 
