@@ -65,9 +65,9 @@ const seedItems = [
 /* ---- שמירה מקומית (localStorage) — עטוף בהגנה כדי לא להפיל שום סביבה ---- */
 const STORAGE_KEY = "habayit_items_v1";
 
-/* כתובת הסנכרון המשותף — jsonblob (מאגר JSON משותף לכל בני הבית).
-   אם לא זמין (אין רשת) — האפליקציה נופלת חזרה ל-localStorage. */
-const SYNC_URL = "https://jsonblob.com/api/jsonBlob/019eeabc-38d7-7b48-ac26-c862a065ad54";
+/* כתובת הסנכרון המשותף. כשהאפליקציה מוגשת מה-Worker, ה-API באותו origin.
+   אם ריק או לא זמין (פתיחת קובץ מקומי) — האפליקציה עובדת מקומית בלבד. */
+const SYNC_URL = "/api/items";
 
 function loadItems() {
   try {
@@ -592,6 +592,7 @@ export default function ShoppingList() {
   const [editing, setEditing] = useState(null);
   const [editOriginal, setEditOriginal] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false); // כלי ייצוא זמני
   const [draft, setDraft] = useState({ name: "", emoji: "🛒", category: "אוכל", type: "משתנים", priority: "medium", note: "", who: null });
 
   const cfg = TABS.find((t) => t.key === tab);
@@ -606,7 +607,7 @@ export default function ShoppingList() {
   // טעינה ראשונית מהשרת המשותף
   useEffect(() => {
     if (!SYNC_URL) return;
-    fetch(SYNC_URL, { headers: { Accept: "application/json" } })
+    fetch(SYNC_URL)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && Array.isArray(data.items)) {
@@ -656,7 +657,7 @@ export default function ShoppingList() {
     if (!SYNC_URL) return;
     const id = setInterval(() => {
       if (localDirty.current) return; // יש שינוי מקומי בדרך — לא לדרוס
-      fetch(SYNC_URL, { headers: { Accept: "application/json" } })
+      fetch(SYNC_URL)
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (!data || !Array.isArray(data.items)) return;
@@ -728,6 +729,38 @@ export default function ShoppingList() {
     (filters.priority ? 1 : 0) +
     filters.who.length +
     (filters.status !== "all" ? 1 : 0);
+
+  /* ---- כלי ייצוא זמני (קריאה בלבד מ-localStorage) ---- */
+  const getRawData = () => {
+    try {
+      return localStorage.getItem("habayit_items_v1") || JSON.stringify(items);
+    } catch {
+      return JSON.stringify(items);
+    }
+  };
+  const copyData = async () => {
+    const text = getRawData();
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("הנתונים הועתקו ללוח ✅");
+    } catch {
+      const ta = document.getElementById("export-ta");
+      if (ta) { ta.focus(); ta.select(); try { document.execCommand("copy"); alert("הנתונים הועתקו ✅"); } catch {} }
+    }
+  };
+  const downloadData = () => {
+    try {
+      const blob = new Blob([getRawData()], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "habayit_items_v1.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {}
+  };
 
   /* ---- פעולות ---- */
   const toggle = (id) =>
@@ -1196,6 +1229,57 @@ export default function ShoppingList() {
           </button>
         </div>
       </Sheet>
+
+      {/* ===== כלי ייצוא זמני — להסרה אחרי שמעתיקים את הנתונים ===== */}
+      <button
+        onClick={() => setExportOpen(true)}
+        className="fixed top-2 left-2 z-50 rounded-full px-3 h-8 text-[12px] font-bold text-white shadow-lg"
+        style={{ background: "#3c7f5f" }}
+      >
+        ⬇ ייצוא נתונים
+      </button>
+
+      {exportOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background: "rgba(20,30,25,0.55)" }}
+          onClick={() => setExportOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+            className="w-full max-w-[440px] rounded-2xl p-4 flex flex-col"
+            style={{ background: "#fff", maxHeight: "85vh", boxShadow: "0 20px 60px -20px rgba(0,0,0,0.5)" }}
+          >
+            <div className="font-bold text-stone-700 mb-1 text-center">ייצוא נתונים (זמני)</div>
+            <div className="text-[11px] text-stone-400 text-center mb-3">העתק את כל הטקסט או הורד כקובץ — לא משנה שום מידע</div>
+            <textarea
+              id="export-ta"
+              readOnly
+              value={getRawData()}
+              dir="ltr"
+              onFocus={(e) => e.target.select()}
+              className="flex-1 w-full rounded-lg p-2 text-[11px]"
+              style={{
+                minHeight: 220, resize: "none", direction: "ltr",
+                fontFamily: "ui-monospace, Menlo, Consolas, monospace",
+                border: "1px solid rgba(120,140,130,0.4)", background: "#f7f9f7", color: "#2b3a33",
+              }}
+            />
+            <div className="flex gap-2 mt-3">
+              <button onClick={copyData} className="flex-1 rounded-xl h-10 font-bold text-white" style={{ background: "linear-gradient(180deg,#4ea27a,#3c7f5f)" }}>
+                העתק הכול
+              </button>
+              <button onClick={downloadData} className="flex-1 rounded-xl h-10 font-bold" style={{ background: "#eef3ef", color: "#3c5a4b" }}>
+                הורד JSON
+              </button>
+              <button onClick={() => setExportOpen(false)} className="rounded-xl h-10 px-4 font-bold" style={{ background: "#f3e7e7", color: "#b42318" }}>
+                סגור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
