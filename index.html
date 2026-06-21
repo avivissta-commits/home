@@ -13,6 +13,15 @@
 </head>
 <body>
   <div id="root"></div>
+
+  <!-- ===== כתובת השרת לסנכרון (Cloudflare Worker) =====
+       הדבק כאן את כתובת ה-Worker שלך, למשל:
+       window.HABAYIT_SYNC_URL = "https://habayit-sync.שם-המשתמש.workers.dev";
+       אם משאירים ריק "" — האפליקציה עובדת מקומית בלבד (localStorage). -->
+  <script>
+    window.HABAYIT_SYNC_URL = "";
+  </script>
+
   <script src="./app.js"></script>
 </body>
 </html>
