@@ -1,0 +1,21 @@
+{
+  // שם ה-Worker (יקבע גם את כתובת ה-workers.dev)
+  "name": "habayit",
+  "main": "worker.js",
+  "compatibility_date": "2025-01-01",
+
+  // קבצים סטטיים: שים את index.html ו-app.js בתוך תיקיית public/
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  // מאגר משותף לרשימה. החלף את ה-id במה שתקבל מהפקודה:
+  //   npx wrangler kv namespace create LIST_KV
+  "kv_namespaces": [
+    {
+      "binding": "LIST_KV",
+      "id": "PUT_YOUR_KV_NAMESPACE_ID_HERE"
+    }
+  ]
+}

@@ -62,6 +62,10 @@ const seedItems = [...seedShopping, ...seedTasks];
 /* ---- שמירה מקומית (localStorage) — עטוף בהגנה כדי לא להפיל שום סביבה ---- */
 const STORAGE_KEY = "habayit_items_v1";
 
+/* כתובת הסנכרון המשותף. כשהאפליקציה מוגשת מה-Worker, ה-API באותו origin.
+   אם ריק או לא זמין (פתיחת קובץ מקומי) — האפליקציה עובדת מקומית בלבד. */
+const SYNC_URL = "/api/items";
+
 function loadItems() {
   try {
     if (typeof window === "undefined" || !window.localStorage) return seedItems;
@@ -590,8 +594,80 @@ export default function ShoppingList() {
   const cfg = TABS.find((t) => t.key === tab);
   const register = useFlip();
 
-  // שמירה אוטומטית בכל שינוי ברשימה
-  useEffect(() => { saveItems(items); }, [items]);
+  /* ---- סנכרון משותף (שרת + KV) עם נפילה חזרה לאחסון מקומי ---- */
+  const lastSyncJson = useRef(null);   // ה-JSON של מצב השרת האחרון שראינו
+  const remoteApply = useRef(false);   // האם השינוי הנוכחי הגיע מהשרת
+  const localDirty = useRef(false);    // האם יש שינוי מקומי שטרם נשמר לשרת
+  const saveTimer = useRef(null);
+
+  // טעינה ראשונית מהשרת המשותף
+  useEffect(() => {
+    if (!SYNC_URL) return;
+    fetch(SYNC_URL)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.items)) {
+          lastSyncJson.current = JSON.stringify(data.items);
+          remoteApply.current = true;
+          setItems(data.items);
+        } else {
+          // אין עדיין רשימה משותפת — נזרע אותה במה שיש מקומית
+          lastSyncJson.current = JSON.stringify(items);
+          fetch(SYNC_URL, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items }),
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // שמירה: מקומי תמיד, ולשרת בהשהיה קצרה
+  useEffect(() => {
+    saveItems(items); // גיבוי מקומי / מצב לא-מקוון
+    if (!SYNC_URL) return;
+    if (remoteApply.current) {
+      remoteApply.current = false;
+      lastSyncJson.current = JSON.stringify(items);
+      return;
+    }
+    const json = JSON.stringify(items);
+    if (json === lastSyncJson.current) return;
+    localDirty.current = true;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      fetch(SYNC_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      })
+        .then(() => { lastSyncJson.current = json; localDirty.current = false; })
+        .catch(() => { localDirty.current = false; });
+    }, 500);
+  }, [items]);
+
+  // poll — לקלוט שינויים שחבר עשה
+  useEffect(() => {
+    if (!SYNC_URL) return;
+    const id = setInterval(() => {
+      if (localDirty.current) return; // יש שינוי מקומי בדרך — לא לדרוס
+      fetch(SYNC_URL)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data || !Array.isArray(data.items)) return;
+          const json = JSON.stringify(data.items);
+          if (json === lastSyncJson.current) return;
+          lastSyncJson.current = json;
+          remoteApply.current = true;
+          setItems(data.items);
+        })
+        .catch(() => {});
+    }, 4000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const emptyFilters = { type: null, categories: [], priority: null, status: "all", who: [] };
 
