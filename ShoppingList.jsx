@@ -558,6 +558,7 @@ export default function ShoppingList() {
   const [filters, setFilters] = useState({ type: null, categories: [], priority: null, status: "all", who: [] });
 
   const [editing, setEditing] = useState(null);
+  const [editOriginal, setEditOriginal] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState({ name: "", emoji: "🛒", category: "אוכל", type: "משתנים", priority: "medium", note: "", who: null });
 
@@ -645,9 +646,25 @@ export default function ShoppingList() {
   };
 
   const updateEditing = (patch) => {
-    if (!editing) return;
-    setItems((prev) => prev.map((it) => (it.id === editing.id ? { ...it, ...patch, updated: "21.06.26" } : it)));
     setEditing((e) => (e ? { ...e, ...patch } : e));
+  };
+
+  const openEdit = (item) => {
+    setEditOriginal(item);
+    setEditing({ ...item });
+  };
+
+  const EDIT_FIELDS = ["name", "emoji", "category", "type", "priority", "note", "who"];
+  const editDirty =
+    !!editing && !!editOriginal &&
+    EDIT_FIELDS.some((k) => (editing[k] ?? "") !== (editOriginal[k] ?? ""));
+
+  const confirmEdit = () => {
+    if (!editing) return;
+    if (editDirty) {
+      setItems((prev) => prev.map((it) => (it.id === editing.id ? { ...editing, updated: "21.06.26" } : it)));
+    }
+    setEditing(null);
   };
 
   const addItem = () => {
@@ -794,7 +811,7 @@ export default function ShoppingList() {
                     item={it}
                     registerRef={register(it.id)}
                     onToggle={toggle}
-                    onEdit={setEditing}
+                    onEdit={openEdit}
                     removing={removing.has(it.id)}
                   />
                 ))}
@@ -817,7 +834,7 @@ export default function ShoppingList() {
                             item={it}
                             registerRef={register(it.id)}
                             onToggle={toggle}
-                            onEdit={setEditing}
+                            onEdit={openEdit}
                             removing={removing.has(it.id)}
                           />
                         ))}
@@ -830,7 +847,7 @@ export default function ShoppingList() {
                         item={it}
                         registerRef={register(it.id)}
                         onToggle={toggle}
-                        onEdit={setEditing}
+                        onEdit={openEdit}
                         removing={removing.has(it.id)}
                       />
                     ))
@@ -995,13 +1012,27 @@ export default function ShoppingList() {
                 style={glass({ background: "rgba(255,255,255,0.5)" })}
               />
             </div>
-            <button
-              onClick={() => remove(editing.id)}
-              className="w-full rounded-2xl h-11 font-bold"
-              style={{ background: "rgba(255,99,99,0.15)", color: "#b42318", border: "1px solid rgba(239,68,68,0.3)" }}
-            >
-              מחק {cfg.word}
-            </button>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={confirmEdit}
+                disabled={!editDirty}
+                className="flex-1 rounded-2xl h-11 font-bold text-white transition-transform active:scale-[0.98]"
+                style={
+                  editDirty
+                    ? { background: "linear-gradient(180deg,#4ea27a,#3c7f5f)", cursor: "pointer" }
+                    : { background: "rgba(120,140,130,0.25)", color: "rgba(90,107,98,0.6)", cursor: "not-allowed" }
+                }
+              >
+                אשר
+              </button>
+              <button
+                onClick={() => remove(editing.id)}
+                className="flex-1 rounded-2xl h-11 font-bold transition-transform active:scale-[0.98]"
+                style={{ background: "rgba(255,99,99,0.15)", color: "#b42318", border: "1px solid rgba(239,68,68,0.3)" }}
+              >
+                מחק
+              </button>
+            </div>
           </div>
         )}
       </Sheet>
