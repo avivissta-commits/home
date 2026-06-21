@@ -627,7 +627,7 @@ export default function ShoppingList() {
           lastSyncJson.current = JSON.stringify(items);
           return fetch(SYNC_URL, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
             body: JSON.stringify({ items }),
           }).then((r) => dbg("seeded jsonblob " + r.status));
         }
@@ -654,23 +654,32 @@ export default function ShoppingList() {
     if (json === lastSyncJson.current) return;
     localDirty.current = true;
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      fetch(SYNC_URL, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      })
-        .then((r) => {
-          if (!r.ok) throw new Error("PUT " + r.status);
-          lastSyncJson.current = json;
-          localDirty.current = false;
-          dbg("saved to jsonblob ✓");
-        })
-        .catch((e) => {
-          localDirty.current = false;
-          dbg("jsonblob save failed");
-          try { console.error("[sync] save failed:", e); } catch {}
+    saveTimer.current = setTimeout(async () => {
+      dbg("save started");
+      try {
+        const r = await fetch(SYNC_URL, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({ items }),
         });
+        try { console.log("[sync] PUT status:", r.status); } catch {}
+        if (!r.ok) {
+          let txt = "";
+          try { txt = await r.text(); } catch {}
+          try { console.error("[sync] PUT failed body:", txt); } catch {}
+          throw new Error("PUT " + r.status);
+        }
+        lastSyncJson.current = json;
+        localDirty.current = false;
+        dbg("saved to jsonblob ✓ (" + r.status + ")");
+      } catch (e) {
+        localDirty.current = false;
+        dbg("jsonblob save failed");
+        try { console.error("[sync] save failed (full error):", e); } catch {}
+      }
     }, 500);
   }, [items]);
 
