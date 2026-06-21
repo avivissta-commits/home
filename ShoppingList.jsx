@@ -598,31 +598,23 @@ export default function ShoppingList() {
   const cfg = TABS.find((t) => t.key === tab);
   const register = useFlip();
 
-  /* ---- סנכרון משותף (jsonblob) עם נפילה חזרה לאחסון מקומי + דיבוג ---- */
+  /* ---- סנכרון משותף (Cloudflare Worker + KV) עם נפילה חזרה לאחסון מקומי ---- */
   const lastSyncJson = useRef(null);   // ה-JSON של מצב השרת האחרון שראינו
   const remoteApply = useRef(false);   // האם השינוי הנוכחי הגיע מהשרת
   const localDirty = useRef(false);    // האם יש שינוי מקומי שטרם נשמר לשרת
   const hydrated = useRef(false);      // האם הטעינה הראשונה מהשרת הסתיימה
   const saveTimer = useRef(null);
-  const [syncMsg, setSyncMsg] = useState("מאתחל…");
-  const dbg = (msg) => { try { console.log("[sync]", msg); } catch {} setSyncMsg(msg); };
 
   // טעינה ראשונית מהשרת המשותף
   useEffect(() => {
-    if (!SYNC_URL) { hydrated.current = true; dbg("מקומי בלבד"); return; }
-    try { console.log("[sync] endpoint:", SYNC_URL); } catch {}
+    if (!SYNC_URL) { hydrated.current = true; return; }
     fetch(SYNC_URL, { headers: { Accept: "application/json" } })
-      .then((r) => {
-        dbg("GET " + r.status);
-        if (!r.ok) throw new Error("GET " + r.status);
-        return r.json();
-      })
+      .then((r) => { if (!r.ok) throw new Error("GET " + r.status); return r.json(); })
       .then((data) => {
         if (data && Array.isArray(data.items)) {
           lastSyncJson.current = JSON.stringify(data.items);
           remoteApply.current = true;
           setItems(data.items);
-          dbg("loaded from jsonblob (" + data.items.length + ")");
         } else {
           // אין עדיין רשימה תקינה — נזרע אותה במה שיש מקומית
           lastSyncJson.current = JSON.stringify(items);
@@ -630,13 +622,10 @@ export default function ShoppingList() {
             method: "PUT",
             headers: { "Content-Type": "application/json", "Accept": "application/json" },
             body: JSON.stringify({ items }),
-          }).then((r) => dbg("seeded jsonblob " + r.status));
+          });
         }
       })
-      .catch((e) => {
-        dbg("using localStorage fallback");
-        try { console.error("[sync] load failed:", e); } catch {}
-      })
+      .catch(() => {}) // לא זמין — ממשיכים מקומית
       .finally(() => { hydrated.current = true; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -655,32 +644,18 @@ export default function ShoppingList() {
     if (json === lastSyncJson.current) return;
     localDirty.current = true;
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      dbg("save started");
-      try {
-        const r = await fetch(SYNC_URL, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-          },
-          body: JSON.stringify({ items }),
-        });
-        try { console.log("[sync] PUT status:", r.status); } catch {}
-        if (!r.ok) {
-          let txt = "";
-          try { txt = await r.text(); } catch {}
-          try { console.error("[sync] PUT failed body:", txt); } catch {}
-          throw new Error("PUT " + r.status);
-        }
-        lastSyncJson.current = json;
-        localDirty.current = false;
-        dbg("saved to jsonblob ✓ (" + r.status + ")");
-      } catch (e) {
-        localDirty.current = false;
-        dbg("jsonblob save failed");
-        try { console.error("[sync] save failed (full error):", e); } catch {}
-      }
+    saveTimer.current = setTimeout(() => {
+      fetch(SYNC_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ items }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error("PUT " + r.status);
+          lastSyncJson.current = json;
+          localDirty.current = false;
+        })
+        .catch(() => { localDirty.current = false; });
     }, 500);
   }, [items]);
 
@@ -698,7 +673,6 @@ export default function ShoppingList() {
           lastSyncJson.current = json;
           remoteApply.current = true;
           setItems(data.items);
-          dbg("remote update received");
         })
         .catch(() => {});
     }, 4000);
@@ -1230,14 +1204,6 @@ export default function ShoppingList() {
           </button>
         </div>
       </Sheet>
-
-      {/* ===== חיווי דיבוג זמני של הסנכרון — להסרה אחרי שמאמתים ===== */}
-      <div
-        className="fixed top-1 left-1 z-50 text-[10px] px-2 py-0.5 rounded-full pointer-events-none"
-        style={{ background: "rgba(20,30,25,0.6)", color: "#fff" }}
-      >
-        sync: {syncMsg}
-      </div>
     </div>
   );
 }
