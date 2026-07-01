@@ -689,16 +689,64 @@ function Pills({ options, value, onChange, multi }) {
    כך שהיא לא תופסת רוחב אופקי ולא דוחקת את שדה השם. */
 function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
   const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const pressTimer = useRef(null);
+  const longPressed = useRef(false);
+  const inputRef = useRef(null);
+
+  // פירוק ל-graphemes (אימוג'י אחד = יחידה אחת, כולל ZWJ/גווני עור)
+  const graphemes = (str) => {
+    try {
+      if (typeof Intl !== "undefined" && Intl.Segmenter) {
+        const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+        return Array.from(seg.segment(str), (s) => s.segment);
+      }
+    } catch {}
+    return Array.from(str);
+  };
+  const isEmoji = (ch) => {
+    try { return /\p{Extended_Pictographic}/u.test(ch); } catch { return !!ch; }
+  };
+
+  const openCustom = () => {
+    setOpen(true);
+    setCustom(true);
+    setCustomVal("");
+    setTimeout(() => inputRef.current?.focus(), 60);
+  };
+  const startPress = () => {
+    longPressed.current = false;
+    clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => { longPressed.current = true; openCustom(); }, 450);
+  };
+  const endPress = () => clearTimeout(pressTimer.current);
+  const onBtnClick = () => {
+    if (longPressed.current) { longPressed.current = false; return; }
+    setOpen((o) => !o);
+  };
+  const onCustomChange = (e) => {
+    const gs = graphemes(e.target.value);
+    const last = gs.length ? gs[gs.length - 1] : "";
+    if (last && isEmoji(last)) { setCustomVal(last); onEmoji(last); }
+    else setCustomVal("");
+  };
+
   return (
     <div>
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-label="בחר אייקון"
-          className="shrink-0 grid place-items-center rounded-2xl text-xl transition-transform active:scale-90"
+          onClick={onBtnClick}
+          onPointerDown={startPress}
+          onPointerUp={endPress}
+          onPointerLeave={endPress}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-label="בחר אייקון (לחיצה ארוכה לאימוג׳י משלך)"
+          className="shrink-0 grid place-items-center rounded-2xl text-xl transition-transform active:scale-90 select-none"
           style={{
             width: 48, height: 44,
+            touchAction: "manipulation",
             ...glass({ background: "rgba(255,255,255,0.5)" }),
             outline: open ? "2px solid rgba(74,150,110,0.7)" : "none",
           }}
@@ -718,6 +766,21 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
           className="mt-2 p-2 rounded-2xl space-y-1.5"
           style={glass({ background: "rgba(255,255,255,0.5)" })}
         >
+          {custom && (
+            <div className="flex items-center gap-2 pb-1.5 mb-1.5 border-b border-stone-200/70">
+              <input
+                ref={inputRef}
+                value={customVal}
+                onChange={onCustomChange}
+                placeholder="😀"
+                inputMode="text"
+                maxLength={8}
+                className="w-12 h-10 text-center rounded-xl outline-none text-2xl"
+                style={{ ...glass({ background: "rgba(255,255,255,0.7)" }), caretColor: "#4a966e" }}
+              />
+              <span className="text-[12px] text-stone-500">הקלד אימוג׳י משלך מהמקלדת (אחד בלבד)</span>
+            </div>
+          )}
           {groups.map((g) => (
             <div key={g.label} className="flex justify-between">
               {g.items.map((e) => {
@@ -726,7 +789,7 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
                   <button
                     key={e}
                     type="button"
-                    onClick={() => { onEmoji(e); setOpen(false); }}
+                    onClick={() => { onEmoji(e); setOpen(false); setCustom(false); }}
                     className="grid place-items-center rounded-lg text-lg transition-transform active:scale-90"
                     style={{
                       width: 38, height: 38,
