@@ -216,7 +216,7 @@ const glass = (extra = {}) => ({
 
 /* רקע הכרטיס לפי חשיבות — שכבת צבע עדינה מעל glass, נשמרת שקיפות/blur */
 function cardStyle(priority, bought) {
-  if (bought) return glass({ background: "rgba(255,255,255,0.34)", opacity: 0.72 });
+  if (bought) return glass({ background: "rgba(255,255,255,0.34)" });
   if (priority === "high")
     return glass({
       background:
@@ -360,7 +360,7 @@ function ItemCard({ item, registerRef, onToggle, onEdit, onToggleSub, removing, 
         {/* ימין: אייקון הפריט */}
         <div
           className="shrink-0 grid place-items-center rounded-xl text-xl"
-          style={{ width: 40, height: 40, ...glass({ background: "rgba(255,255,255,0.45)" }) }}
+          style={{ width: 40, height: 40, opacity: bought ? 0.5 : 1, ...glass({ background: "rgba(255,255,255,0.45)" }) }}
         >
           {item.emoji}
         </div>
@@ -407,14 +407,28 @@ function ItemCard({ item, registerRef, onToggle, onEdit, onToggleSub, removing, 
           </div>
         )}
 
-        {/* קצה שמאל: checkbox לסימון (עוצר את לחיצת הכרטיס) */}
-        <Checkbox
-          checked={bought}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle(item.id);
-          }}
-        />
+        {/* קצה שמאל: פעולה — סימון (פעיל) או "החזר לרשימה" (הושלם) */}
+        {bought ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggle(item.id); }}
+            className="shrink-0 rounded-full px-3.5 h-9 text-[12.5px] font-bold transition-transform active:scale-95"
+            style={{
+              background: "rgba(20,170,95,0.12)",
+              color: "#12a05a",
+              border: "1px solid rgba(20,170,95,0.5)",
+            }}
+          >
+            החזר לרשימה
+          </button>
+        ) : (
+          <Checkbox
+            checked={bought}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle(item.id);
+            }}
+          />
+        )}
       </div>
 
       {/* צ'קליסט תת-הפריטים — נגלל, ללא אייקונים, עם V לכל שורה */}
@@ -774,6 +788,7 @@ export default function ShoppingList() {
   const [addKind, setAddKind] = useState("shopping"); // מה מוסיפים כרגע (קניות/משימות), בלתי תלוי בטאב
   const [completePrompt, setCompletePrompt] = useState(null); // פופ-אפ השלמת "משתנים"
   const [promptClosing, setPromptClosing] = useState(false);   // אנימציית יציאה
+  const [toast, setToast] = useState(null); // { msg, prev } לביטול פעולה
   const [draft, setDraft] = useState({ name: "", emoji: "🛒", category: "אוכל", type: "משתנים", priority: "low", note: "", who: null, subs: [] });
 
   const cfg = TABS.find((t) => t.key === tab);
@@ -919,6 +934,31 @@ export default function ShoppingList() {
     filters.who.length +
     (filters.status !== "all" ? 1 : 0);
 
+  /* ---- טוסט Undo ---- */
+  const toastTimer = useRef(null);
+  const toastCloseTimer = useRef(null);
+  const removeTimer = useRef(null);
+  const [toastClosing, setToastClosing] = useState(false);
+  const dismissToast = () => {
+    setToastClosing(true);
+    clearTimeout(toastCloseTimer.current);
+    toastCloseTimer.current = setTimeout(() => { setToast(null); setToastClosing(false); }, 240);
+  };
+  const showToast = (msg, prev) => {
+    clearTimeout(toastCloseTimer.current);
+    setToastClosing(false);
+    setToast({ msg, prev });
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(dismissToast, 4000);
+  };
+  const undoToast = () => {
+    clearTimeout(removeTimer.current);
+    clearTimeout(toastTimer.current);
+    if (toast?.prev) { setItems(toast.prev); setRemoving(new Set()); }
+    dismissToast();
+  };
+  const doneMsg = (it) => `${it.name} ${it.kind === "shopping" ? "נקנה" : "בוצע"}`;
+
   /* ---- פעולות ---- */
   const toggle = (id) =>
     setItems((prev) =>
@@ -944,10 +984,11 @@ export default function ShoppingList() {
           setCompletePrompt({ ...it, subs });
           setPromptClosing(false);
         } else {
+          showToast(doneMsg(it), items);
           setItems((prev) => prev.map((x) => (x.id === id ? { ...x, subs, status: "done", updated: nowStamp() } : x)));
         }
       } else {
-        setItems((prev) => prev.map((x) => (x.id === id ? { ...x, status: "active", subs: x.subs.map((s) => ({ ...s, done: false })), updated: nowStamp() } : x)));
+        setItems((prev) => prev.map((x) => (x.id === id ? { ...x, status: "active", priority: "low", subs: x.subs.map((s) => ({ ...s, done: false })), updated: nowStamp() } : x)));
       }
       return;
     }
@@ -955,8 +996,12 @@ export default function ShoppingList() {
     if (it.status === "active" && it.type === "משתנים") {
       setCompletePrompt(it);
       setPromptClosing(false);
-    } else {
+    } else if (it.status === "active") {
+      showToast(doneMsg(it), items);
       toggle(id);
+    } else {
+      // החזרה לרשימה — איפוס חשיבות ל"רגיל"
+      setItems((prev) => prev.map((x) => (x.id === id ? { ...x, status: "active", priority: "low", updated: nowStamp() } : x)));
     }
   };
 
@@ -974,12 +1019,15 @@ export default function ShoppingList() {
       setPromptClosing(false);
       return;
     }
+    const willComplete = allDone && it.status === "active";
+    const willReopen = !allDone && it.status === "done";
+    if (willComplete) showToast(doneMsg(it), items);
     setItems((prev) =>
       prev.map((x) => {
         if (x.id !== itemId) return x;
         let status = x.status;
-        if (allDone && status === "active") status = "done";
-        else if (!allDone && status === "done") status = "active";
+        if (willComplete) status = "done";
+        else if (willReopen) status = "active";
         return { ...x, subs, status, updated: nowStamp() };
       })
     );
@@ -1001,8 +1049,11 @@ export default function ShoppingList() {
   };
 
   const remove = (id) => {
+    const it = items.find((x) => x.id === id);
+    showToast(it ? `${it.name} נמחק` : "הפריט נמחק", items);
     setRemoving((s) => new Set(s).add(id));
-    setTimeout(() => {
+    clearTimeout(removeTimer.current);
+    removeTimer.current = setTimeout(() => {
       setItems((prev) => prev.filter((it) => it.id !== id));
       setRemoving((s) => {
         const n = new Set(s);
@@ -1114,6 +1165,14 @@ export default function ShoppingList() {
         @keyframes cardStagger {
           from { opacity: 0; transform: translateY(12px) scale(0.985); }
           to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(-14px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes toastOut {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to { opacity: 0; transform: translateY(-16px) scale(0.97); }
         }
       `}</style>
 
@@ -1588,6 +1647,33 @@ export default function ShoppingList() {
                 ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== טוסט Undo (עליון, בסגנון iOS) ===== */}
+      {toast && (
+        <div className="fixed top-3 left-0 right-0 z-[70] flex justify-center px-4 pointer-events-none">
+          <div
+            dir="rtl"
+            className="pointer-events-auto flex items-center gap-3 rounded-2xl pr-4 pl-2 py-2.5 w-full max-w-[360px]"
+            style={{
+              background: "rgba(38,48,43,0.94)",
+              backdropFilter: "blur(14px)",
+              boxShadow: "0 14px 34px -12px rgba(0,0,0,0.55)",
+              animation: toastClosing
+                ? "toastOut 240ms ease forwards"
+                : "toastIn 260ms cubic-bezier(0.22,1,0.36,1)",
+            }}
+          >
+            <span className="flex-1 text-[14px] font-medium text-white text-right">{toast.msg}</span>
+            <button
+              onClick={undoToast}
+              className="shrink-0 rounded-xl px-3 h-8 text-[14px] font-bold transition-transform active:scale-95"
+              style={{ background: "rgba(95,208,160,0.16)", color: "#5fd0a0" }}
+            >
+              בטל
+            </button>
           </div>
         </div>
       )}
