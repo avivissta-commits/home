@@ -709,21 +709,18 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
     try { return /\p{Extended_Pictographic}/u.test(ch); } catch { return !!ch; }
   };
 
-  const openCustom = () => {
-    setOpen(false);
-    setCustom(true);
-    setCustomVal("");
-    setTimeout(() => inputRef.current?.focus(), 40);
-  };
-  const startPress = () => {
-    longPressed.current = false;
-    clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(() => { longPressed.current = true; openCustom(); }, 450);
-  };
-  const endPress = () => clearTimeout(pressTimer.current);
-  const onBtnClick = () => {
-    if (longPressed.current) { longPressed.current = false; return; }
-    setOpen((o) => !o);
+  const pressStart = useRef(0);
+  const onDown = () => { pressStart.current = Date.now(); };
+  const onClick = () => {
+    const dur = Date.now() - pressStart.current;
+    if (dur >= 400) {
+      // לחיצה ארוכה → הפעל את שדה האימוג'י (focus סינכרוני בתוך הקליק → iOS פותח מקלדת)
+      setCustom(true);
+      setCustomVal("");
+      if (inputRef.current) { inputRef.current.focus(); }
+    } else {
+      setOpen((o) => !o);
+    }
   };
   const onCustomChange = (e) => {
     const gs = graphemes(e.target.value);
@@ -735,7 +732,8 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
   return (
     <div>
       <div className="flex items-center gap-2">
-        {custom ? (
+        {/* משבצת האייקון: שדה הקלדה קיים תמיד (מוסתר) + כפתור מעליו */}
+        <div className="relative shrink-0 select-none" style={{ width: 48, height: 44, touchAction: "manipulation" }}>
           <input
             ref={inputRef}
             value={customVal}
@@ -745,34 +743,33 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
             inputMode="text"
             enterKeyHint="done"
             aria-label="הקלד אימוג׳י משלך"
-            className="shrink-0 text-center rounded-2xl text-2xl outline-none"
+            tabIndex={custom ? 0 : -1}
+            className="absolute inset-0 w-full h-full text-center rounded-2xl text-2xl outline-none"
             style={{
-              width: 48, height: 44,
               ...glass({ background: "rgba(255,255,255,0.7)" }),
-              outline: "2px solid rgba(74,150,110,0.7)",
+              outline: custom ? "2px solid rgba(74,150,110,0.7)" : "none",
+              opacity: custom ? 1 : 0,
+              pointerEvents: custom ? "auto" : "none",
               caretColor: "#4a966e",
             }}
           />
-        ) : (
-          <button
-            type="button"
-            onClick={onBtnClick}
-            onPointerDown={startPress}
-            onPointerUp={endPress}
-            onPointerLeave={endPress}
-            onContextMenu={(e) => e.preventDefault()}
-            aria-label="בחר אייקון (לחיצה ארוכה לאימוג׳י משלך)"
-            className="shrink-0 grid place-items-center rounded-2xl text-xl transition-transform active:scale-90 select-none"
-            style={{
-              width: 48, height: 44,
-              touchAction: "manipulation",
-              ...glass({ background: "rgba(255,255,255,0.5)" }),
-              outline: open ? "2px solid rgba(74,150,110,0.7)" : "none",
-            }}
-          >
-            {emoji}
-          </button>
-        )}
+          {!custom && (
+            <button
+              type="button"
+              onPointerDown={onDown}
+              onClick={onClick}
+              onContextMenu={(e) => e.preventDefault()}
+              aria-label="בחר אייקון (לחיצה ארוכה לאימוג׳י משלך)"
+              className="absolute inset-0 w-full h-full grid place-items-center rounded-2xl text-xl transition-transform active:scale-90"
+              style={{
+                ...glass({ background: "rgba(255,255,255,0.5)" }),
+                outline: open ? "2px solid rgba(74,150,110,0.7)" : "none",
+              }}
+            >
+              {emoji}
+            </button>
+          )}
+        </div>
         <input
           value={name}
           onChange={(e) => onName(e.target.value)}
