@@ -118,7 +118,7 @@ const SHOPPING_EMOJIS = [
 const TASK_EMOJIS = [
   { label: "ניקיון", items: ["🧽", "🧹", "🚿", "🪣", "🧴"] },
   { label: "כביסה", items: ["🧺", "👕", "🧦", "👖", "🧼"] },
-  { label: "סידור", items: ["🛋️", "🛏️", "📦", "🗂️", "🚪"] },
+  { label: "סידור", items: ["🛋️", "🛏️", "📦", "🗂️", "👔"] },
   { label: "חשבונות", items: ["🧾", "💳", "💰", "📅", "🏦"] },
   { label: "כללי", items: ["✅", "🔧", "🪴", "🐾", "✏️"] },
 ];
@@ -154,7 +154,7 @@ const BG_URL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAkGBwgHB
  * נותן ref-callback לכל פריט; בכל render שמשנה מיקום, הפריטים מחליקים
  * למקום החדש שלהם (reorder), נכנסים ב-fade+slide, ומחליפים מקום בחלקות.
  * ----------------------------------------------------------------- */
-function useFlip() {
+function useFlip(suppressRef) {
   const nodes = useRef(new Map());
   const prev = useRef(new Map());
 
@@ -170,6 +170,9 @@ function useFlip() {
 
   useLayoutEffect(() => {
     if (reduce) return;
+    // בזמן פתיחה/סגירה של קבוצה — מדוד ועדכן מיקומים בלי אנימציית FLIP,
+    // כדי שלא ייווצר "קפיצה" כשהקבוצה השנייה זזה בעקבות שינוי הגובה.
+    const suppressed = suppressRef && suppressRef.current && Date.now() < suppressRef.current;
     const els = nodes.current;
     const next = new Map();
 
@@ -181,21 +184,23 @@ function useFlip() {
     });
 
     // pass 2 — Invert + Play
-    els.forEach((node, id) => {
-      const oldRect = prev.current.get(id);
-      const newRect = next.get(id);
-      if (oldRect) {
-        const dx = oldRect.left - newRect.left;
-        const dy = oldRect.top - newRect.top;
-        if (dx || dy) {
-          node.style.transform = `translate(${dx}px, ${dy}px)`;
-          node.getBoundingClientRect(); // force reflow
-          node.style.transition = "transform 340ms cubic-bezier(0.22, 1, 0.36, 1)";
-          node.style.transform = "none";
+    if (!suppressed) {
+      els.forEach((node, id) => {
+        const oldRect = prev.current.get(id);
+        const newRect = next.get(id);
+        if (oldRect) {
+          const dx = oldRect.left - newRect.left;
+          const dy = oldRect.top - newRect.top;
+          if (dx || dy) {
+            node.style.transform = `translate(${dx}px, ${dy}px)`;
+            node.getBoundingClientRect(); // force reflow
+            node.style.transition = "transform 340ms cubic-bezier(0.22, 1, 0.36, 1)";
+            node.style.transform = "none";
+          }
         }
-      }
-      // כניסה מטופלת ע"י אנימציית ה-stagger הפנימית (cardStagger), לא כאן
-    });
+        // כניסה מטופלת ע"י אנימציית ה-stagger הפנימית (cardStagger), לא כאן
+      });
+    }
 
     prev.current = next;
   });
@@ -234,36 +239,33 @@ function cardStyle(priority, bought) {
   return glass({ background: "rgba(255,255,255,0.55)" }); // רגיל
 }
 
-function PriorityBadge({ priority }) {
-  const p = PRIORITY[priority];
+/* תגית אחידה — משמשת גם לחשיבות וגם לשיוך (אותו גובה/פונט/padding/radius/רוחב) */
+function Badge({ dot, label, bg, text, border }) {
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap"
-      style={{ background: p.bg, color: p.text, border: `1px solid ${p.border}`, backdropFilter: "blur(6px)" }}
+      className="inline-flex items-center justify-center gap-1 rounded-full whitespace-nowrap"
+      style={{
+        height: 20, minWidth: 62, paddingInline: 8,
+        fontSize: 10, fontWeight: 600, lineHeight: 1,
+        background: bg, color: text, border: `1px solid ${border}`,
+        backdropFilter: "blur(6px)",
+      }}
     >
-      <span style={{ width: 8, height: 8, borderRadius: 99, background: p.dot, boxShadow: `0 0 6px ${p.dot}` }} />
-      {p.label}
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: dot, boxShadow: `0 0 5px ${dot}`, flexShrink: 0 }} />
+      <span>{label}</span>
     </span>
   );
 }
 
-/* תג שיוך (אביב / יוסי) — עיגול צבעוני עם השם */
+function PriorityBadge({ priority }) {
+  const p = PRIORITY[priority];
+  return <Badge dot={p.dot} label={p.label} bg={p.bg} text={p.text} border={p.border} />;
+}
+
+/* תג שיוך — אותו קומפוננט Badge, נקודה צבעונית לפי המשתמש */
 function AssigneeChip({ who }) {
   const color = WHO_COLORS[who] || "#6b7280";
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full pl-2 pr-1 py-0.5 text-[11px] font-semibold whitespace-nowrap"
-      style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
-    >
-      <span
-        className="grid place-items-center rounded-full text-white"
-        style={{ width: 15, height: 15, fontSize: who === "כולם" ? 9 : 9, background: color }}
-      >
-        {who === "כולם" ? "👥" : who?.[0]}
-      </span>
-      {who}
-    </span>
-  );
+  return <Badge dot={color} label={who} bg={`${color}20`} text={color} border={`${color}66`} />;
 }
 
 function StatCard({ value, label, tint }) {
@@ -301,6 +303,29 @@ function Checkbox({ checked, onClick }) {
   );
 }
 
+/* כפתור התקדמות תת-משימות — אותה שפה עיצובית כמו כפתור ה-V */
+function ProgressButton({ done, total, open, onClick }) {
+  const complete = done >= total;
+  return (
+    <button
+      onClick={onClick}
+      aria-label="תת-משימות"
+      className="shrink-0 grid place-items-center rounded-xl transition-transform active:scale-90"
+      style={{
+        width: 34, height: 34,
+        background: open ? "rgba(74,180,120,0.16)" : "rgba(255,255,255,0.5)",
+        border: `1.5px solid ${open || complete ? "rgba(74,180,120,0.7)" : "rgba(120,150,135,0.4)"}`,
+        backdropFilter: "blur(6px)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.6)",
+        color: open || complete ? "#2f8f5f" : "#5c6f64",
+        fontWeight: 700, fontSize: 11, lineHeight: 1,
+      }}
+    >
+      {done}/{total}
+    </button>
+  );
+}
+
 /* צ'ק קטן לתת-פריטים */
 function MiniCheck({ checked, onClick }) {
   return (
@@ -324,8 +349,16 @@ function MiniCheck({ checked, onClick }) {
 }
 
 /* כרטיס פריט קומפקטי — פריסה אופקית, גובה נמוך */
-function ItemCard({ item, registerRef, onToggle, onEdit, onToggleSub, removing, enterIndex = 0, enterToken }) {
+function ItemCard({ item, registerRef, onToggle, onEdit, onToggleSub, removing, enterIndex = 0, enterToken, completing = false, closing = false, count = 0 }) {
   const bought = item.status === "done";
+  const isDeleting = completing === "delete";
+  const doneLook = bought || !!completing; // מראה מעומעם בזמן מחווה
+  const strike = bought || completing === "done"; // קו חוצה + V רק להשלמה
+  const comp = completing
+    ? (isDeleting
+        ? { stroke: "#FF3B30", fill: "rgba(255,59,48,0.13)", glow: "drop-shadow(0 0 3px rgba(255,59,48,0.75)) drop-shadow(0 0 6px rgba(255,59,48,0.35))" }
+        : { stroke: "#34C759", fill: "rgba(52,199,89,0.13)", glow: "drop-shadow(0 0 3px rgba(52,199,89,0.75)) drop-shadow(0 0 6px rgba(52,199,89,0.35))" })
+    : null;
   const subs = item.subs || [];
   const hasSubs = subs.length > 0;
   const doneCount = subs.filter((s) => s.done).length;
@@ -345,8 +378,12 @@ function ItemCard({ item, registerRef, onToggle, onEdit, onToggleSub, removing, 
       <div
         key={String(enterToken)}
         style={{
-          animation: "cardStagger 380ms cubic-bezier(0.22,1,0.36,1) both",
-          animationDelay: `${Math.min(enterIndex, 14) * 42}ms`,
+          animation: closing
+            ? "cardExit 320ms cubic-bezier(0.4,0,1,1) forwards"
+            : "cardStagger 460ms cubic-bezier(0.22,1,0.36,1) both",
+          animationDelay: closing
+            ? `${Math.min(Math.max(count - 1 - enterIndex, 0), 6) * 45}ms`
+            : `${Math.min(enterIndex, 12) * 85}ms`,
         }}
       >
       <div
@@ -354,23 +391,55 @@ function ItemCard({ item, registerRef, onToggle, onEdit, onToggleSub, removing, 
         role="button"
         tabIndex={0}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEdit(item)}
-        className="flex items-center gap-2.5 rounded-2xl px-2.5 py-2 cursor-pointer transition-transform active:scale-[0.99]"
+        className="relative overflow-hidden flex items-center gap-2.5 rounded-2xl px-2.5 py-2 cursor-pointer transition-transform active:scale-[0.99]"
         style={cardStyle(item.priority, bought)}
       >
+        {/* מחווה — מסגרת + מילוי על כל הכרטיס (ירוק=השלמה, אדום=מחיקה) */}
+        {comp && (
+          <>
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                borderRadius: "inherit",
+                background: comp.fill,
+                opacity: 0,
+                animation: "fillFade 220ms ease 400ms forwards",
+                zIndex: 1,
+              }}
+            />
+            <svg
+              className="pointer-events-none"
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", zIndex: 3 }}
+            >
+              <rect
+                fill="none" stroke={comp.stroke} strokeWidth="1.1" strokeLinecap="round" pathLength="1"
+                style={{
+                  x: "1.5px", y: "1.5px",
+                  width: "calc(100% - 3px)", height: "calc(100% - 3px)",
+                  rx: "15px", ry: "15px",
+                  strokeDasharray: 1, strokeDashoffset: 1,
+                  animation: "drawBorder 430ms ease forwards",
+                  filter: comp.glow,
+                }}
+              />
+            </svg>
+          </>
+        )}
+
         {/* ימין: אייקון הפריט */}
         <div
-          className="shrink-0 grid place-items-center rounded-xl text-xl"
-          style={{ width: 40, height: 40, opacity: bought ? 0.5 : 1, ...glass({ background: "rgba(255,255,255,0.45)" }) }}
+          className="shrink-0 grid place-items-center rounded-xl"
+          style={{ width: 56, height: 56, fontSize: 34, lineHeight: 1, position: "relative", zIndex: 2, opacity: doneLook ? 0.5 : 1, transition: "opacity 260ms ease", ...glass({ background: "rgba(255,255,255,0.45)" }) }}
         >
           {item.emoji}
         </div>
 
-        {/* אמצע: שם + מטא בשורה אחת קטנה */}
-        <div className="flex-1 min-w-0 text-right">
+        {/* אמצע: שם / מטא / עודכן */}
+        <div className="flex-1 min-w-0 text-right" style={{ position: "relative", zIndex: 2 }}>
           <div className="flex items-center gap-1.5">
             <span
-              className="font-bold text-[15px] leading-tight truncate"
-              style={{ color: bought ? "#7b8a82" : "#2b3a33", textDecoration: bought ? "line-through" : "none" }}
+              className="font-bold text-[17px] leading-tight truncate"
+              style={{ color: doneLook ? "#7b8a82" : "#2b3a33", textDecoration: strike ? "line-through" : "none", transition: "color 260ms ease" }}
             >
               {item.name}
             </span>
@@ -378,57 +447,62 @@ function ItemCard({ item, registerRef, onToggle, onEdit, onToggleSub, removing, 
               <span title="יש הערה" className="shrink-0 text-[12px] opacity-70">📝</span>
             )}
           </div>
-          <div className="text-[11px] text-stone-500 truncate mt-0.5">
-            {item.category} · עודכן {item.updated}
+
+          {/* שורה 2: חשיבות • קטגוריה • שיוך */}
+          <div className="flex items-center gap-1.5 mt-1 text-[14px] leading-none" style={{ color: "#6b7280" }}>
+            {!bought && (
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <span style={{ width: 6, height: 6, borderRadius: 999, background: PRIORITY[item.priority].dot, boxShadow: `0 0 5px ${PRIORITY[item.priority].dot}` }} />
+                <span style={{ color: PRIORITY[item.priority].text }}>{PRIORITY[item.priority].label}</span>
+              </span>
+            )}
+            {!bought && <span className="text-stone-300">·</span>}
+            <span className="truncate">{item.category}</span>
+            {item.who && <span className="text-stone-300 shrink-0">·</span>}
+            {item.who && (
+              <span className="inline-flex items-center gap-1 shrink-0" style={{ color: WHO_COLORS[item.who] }}>
+                <span style={{ width: 6, height: 6, borderRadius: 999, background: WHO_COLORS[item.who] }} />
+                {item.who}
+              </span>
+            )}
           </div>
+
+          {/* שורה 3: עודכן */}
+          <div className="text-[12px] text-stone-400 mt-2 leading-none">עודכן {item.updated}</div>
         </div>
 
-        {/* צ'יפ התקדמות לתת-רשימה — פותח/סוגר את הצ'קליסט */}
-        {hasSubs && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-            className="shrink-0 flex items-center gap-1 rounded-full px-2 h-7 text-[11px] font-bold transition-transform active:scale-95"
-            style={glass({ background: "rgba(255,255,255,0.5)", color: "#5c6f64" })}
-            aria-label="תת-רשימה"
-          >
-            <span>{doneCount}/{subs.length}</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6f8377" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"
-              style={{ transform: open ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform 240ms ease" }}>
-              <path d="m9 18 6-6-6-6" />
-            </svg>
-          </button>
-        )}
-
-        {/* שמאל: תג חשיבות + שיוך */}
-        {(!bought || item.who) && (
-          <div className="shrink-0 flex flex-col items-end gap-1">
-            {!bought && <PriorityBadge priority={item.priority} />}
-            {item.who && <AssigneeChip who={item.who} />}
-          </div>
-        )}
-
-        {/* קצה שמאל: פעולה — סימון (פעיל) או "החזר לרשימה" (הושלם) */}
-        {bought ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggle(item.id); }}
-            className="shrink-0 rounded-full px-3.5 h-9 text-[12.5px] font-bold transition-transform active:scale-95"
-            style={{
-              background: "rgba(20,170,95,0.12)",
-              color: "#12a05a",
-              border: "1px solid rgba(20,170,95,0.5)",
-            }}
-          >
-            החזר לרשימה
-          </button>
-        ) : (
-          <Checkbox
-            checked={bought}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle(item.id);
-            }}
-          />
-        )}
+        {/* שמאל: שני כפתורים מרובעים באותו עיצוב — התקדמות + V */}
+        <div className="shrink-0 flex items-center gap-1.5" style={{ position: "relative", zIndex: 2 }}>
+          {hasSubs && (
+            <ProgressButton
+              done={doneCount}
+              total={subs.length}
+              open={open}
+              onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+            />
+          )}
+          {bought ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggle(item.id); }}
+              className="rounded-full px-3.5 h-9 text-[12.5px] font-bold transition-transform active:scale-95"
+              style={{
+                background: "rgba(20,170,95,0.12)",
+                color: "#12a05a",
+                border: "1px solid rgba(20,170,95,0.5)",
+              }}
+            >
+              החזר לרשימה
+            </button>
+          ) : (
+            <Checkbox
+              checked={strike}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!completing) onToggle(item.id);
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {/* צ'קליסט תת-הפריטים — נגלל, ללא אייקונים, עם V לכל שורה */}
@@ -776,7 +850,33 @@ export default function ShoppingList() {
   const [dir, setDir] = useState(0); // כיוון מעבר הטאב: 1 / -1
   const [search, setSearch] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [closingGroups, setClosingGroups] = useState({}); // קבוצות באנימציית סגירה
+  const [openGen, setOpenGen] = useState({}); // מזהה שמתחלף רק בפתיחה (מפעיל כניסה מדורגת)
+  const groupCloseTimers = useRef({});
+  const toggleGroup = (type, count = 0) => {
+    const timers = groupCloseTimers.current;
+    if (closingGroups[type]) return; // התעלמות בזמן אנימציית סגירה
+    flipSuppress.current = Date.now() + 1100; // מנע קפיצת FLIP של הקבוצה השנייה
+    const isOpen = !collapsedGroups[type];
+    if (isOpen) {
+      // סגירה דו-שלבית: (1) יציאה מדורגת הפוכה (2) קיפול גובה בעוד הכרטיסים מוסתרים
+      setClosingGroups((p) => ({ ...p, [type]: true }));
+      const exitTotal = Math.min(Math.max(count - 1, 0), 6) * 45 + 340;
+      clearTimeout(timers[type]?.t1);
+      clearTimeout(timers[type]?.t2);
+      const t1 = setTimeout(() => setCollapsedGroups((p) => ({ ...p, [type]: true })), exitTotal);
+      const t2 = setTimeout(() => setClosingGroups((p) => ({ ...p, [type]: false })), exitTotal + 320);
+      timers[type] = { t1, t2 };
+    } else {
+      clearTimeout(timers[type]?.t1);
+      clearTimeout(timers[type]?.t2);
+      setClosingGroups((p) => ({ ...p, [type]: false }));
+      setCollapsedGroups((p) => ({ ...p, [type]: false }));
+      setOpenGen((p) => ({ ...p, [type]: (p[type] || 0) + 1 }));
+    }
+  };
   const [completedOpen, setCompletedOpen] = useState({});
+  const [completedOpenGen, setCompletedOpenGen] = useState({}); // מתחלף רק בפתיחת "הושלמו"
   const [removing, setRemoving] = useState(new Set());
 
   const [filterOpen, setFilterOpen] = useState(false);
@@ -789,11 +889,13 @@ export default function ShoppingList() {
   const [completePrompt, setCompletePrompt] = useState(null); // פופ-אפ השלמת "משתנים"
   const [promptClosing, setPromptClosing] = useState(false);   // אנימציית יציאה
   const [toast, setToast] = useState(null); // { msg, prev } לביטול פעולה
+  const [completingIds, setCompletingIds] = useState(() => new Map()); // id -> "done" | "delete"
   const [draft, setDraft] = useState({ name: "", emoji: "🛒", category: "אוכל", type: "משתנים", priority: "low", note: "", who: null, subs: [] });
 
   const cfg = TABS.find((t) => t.key === tab);
   const addCfg = TABS.find((t) => t.key === addKind) || cfg;
-  const register = useFlip();
+  const flipSuppress = useRef(0);
+  const register = useFlip(flipSuppress);
 
   /* ---- סנכרון משותף (Cloudflare Worker + KV) עם נפילה חזרה לאחסון מקומי ---- */
   const lastSyncJson = useRef(null);   // ה-JSON של מצב השרת האחרון שראינו
@@ -938,6 +1040,7 @@ export default function ShoppingList() {
   const toastTimer = useRef(null);
   const toastCloseTimer = useRef(null);
   const removeTimer = useRef(null);
+  const completionTimers = useRef(new Map());
   const [toastClosing, setToastClosing] = useState(false);
   const dismissToast = () => {
     setToastClosing(true);
@@ -954,10 +1057,46 @@ export default function ShoppingList() {
   const undoToast = () => {
     clearTimeout(removeTimer.current);
     clearTimeout(toastTimer.current);
+    completionTimers.current.forEach((t) => clearTimeout(t));
+    completionTimers.current.clear();
+    setCompletingIds(new Map());
     if (toast?.prev) { setItems(toast.prev); setRemoving(new Set()); }
     dismissToast();
   };
   const doneMsg = (it) => `${it.name} ${it.kind === "shopping" ? "נקנה" : "בוצע"}`;
+
+  // אנימציית השלמה (ירוק): מסגרת → מילוי → מעבר ל"הושלמו"
+  const startCompletion = (it, extraPatch = {}) => {
+    const hasPatch = Object.keys(extraPatch).length > 0;
+    if (hasPatch) {
+      setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, ...extraPatch, updated: nowStamp() } : x)));
+    }
+    setCompletingIds((m) => new Map(m).set(it.id, "done"));
+    showToast(doneMsg(it), items);
+    const t = setTimeout(() => {
+      setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, ...extraPatch, status: "done", updated: nowStamp() } : x)));
+      setCompletingIds((m) => { const n = new Map(m); n.delete(it.id); return n; });
+      completionTimers.current.delete(it.id);
+    }, 620);
+    completionTimers.current.set(it.id, t);
+  };
+
+  // אנימציית מחיקה (אדום): מסגרת → מילוי → הכרטיס מתקפל ונמחק
+  const startDeletion = (it) => {
+    setCompletingIds((m) => new Map(m).set(it.id, "delete"));
+    showToast(`${it.name} נמחק`, items);
+    const t = setTimeout(() => {
+      setCompletingIds((m) => { const n = new Map(m); n.delete(it.id); return n; });
+      setRemoving((s) => new Set(s).add(it.id));
+      clearTimeout(removeTimer.current);
+      removeTimer.current = setTimeout(() => {
+        setItems((prev) => prev.filter((x) => x.id !== it.id));
+        setRemoving((s) => { const n = new Set(s); n.delete(it.id); return n; });
+      }, 260);
+      completionTimers.current.delete(it.id);
+    }, 620);
+    completionTimers.current.set(it.id, t);
+  };
 
   /* ---- פעולות ---- */
   const toggle = (id) =>
@@ -984,8 +1123,7 @@ export default function ShoppingList() {
           setCompletePrompt({ ...it, subs });
           setPromptClosing(false);
         } else {
-          showToast(doneMsg(it), items);
-          setItems((prev) => prev.map((x) => (x.id === id ? { ...x, subs, status: "done", updated: nowStamp() } : x)));
+          startCompletion(it, { subs }); // קבוע — אנימציית השלמה
         }
       } else {
         setItems((prev) => prev.map((x) => (x.id === id ? { ...x, status: "active", priority: "low", subs: x.subs.map((s) => ({ ...s, done: false })), updated: nowStamp() } : x)));
@@ -997,8 +1135,7 @@ export default function ShoppingList() {
       setCompletePrompt(it);
       setPromptClosing(false);
     } else if (it.status === "active") {
-      showToast(doneMsg(it), items);
-      toggle(id);
+      startCompletion(it); // קבוע — אנימציית השלמה
     } else {
       // החזרה לרשימה — איפוס חשיבות ל"רגיל"
       setItems((prev) => prev.map((x) => (x.id === id ? { ...x, status: "active", priority: "low", updated: nowStamp() } : x)));
@@ -1019,15 +1156,16 @@ export default function ShoppingList() {
       setPromptClosing(false);
       return;
     }
-    const willComplete = allDone && it.status === "active";
+    if (allDone && it.status === "active") {
+      // קבוע — אנימציית השלמה עם התת-פריטים המעודכנים
+      startCompletion(it, { subs });
+      return;
+    }
     const willReopen = !allDone && it.status === "done";
-    if (willComplete) showToast(doneMsg(it), items);
     setItems((prev) =>
       prev.map((x) => {
         if (x.id !== itemId) return x;
-        let status = x.status;
-        if (willComplete) status = "done";
-        else if (willReopen) status = "active";
+        const status = willReopen ? "active" : x.status;
         return { ...x, subs, status, updated: nowStamp() };
       })
     );
@@ -1040,8 +1178,8 @@ export default function ShoppingList() {
     setPromptClosing(true);
     setTimeout(() => {
       if (target) {
-        if (action === "done") toggle(target.id);
-        else if (action === "delete") remove(target.id);
+        if (action === "done") startCompletion(target);
+        else if (action === "delete") startDeletion(target);
       }
       setCompletePrompt(null);
       setPromptClosing(false);
@@ -1050,18 +1188,8 @@ export default function ShoppingList() {
 
   const remove = (id) => {
     const it = items.find((x) => x.id === id);
-    showToast(it ? `${it.name} נמחק` : "הפריט נמחק", items);
-    setRemoving((s) => new Set(s).add(id));
-    clearTimeout(removeTimer.current);
-    removeTimer.current = setTimeout(() => {
-      setItems((prev) => prev.filter((it) => it.id !== id));
-      setRemoving((s) => {
-        const n = new Set(s);
-        n.delete(id);
-        return n;
-      });
-    }, 260);
     setEditing(null);
+    if (it) startDeletion(it);
   };
 
   const updateEditing = (patch) => {
@@ -1163,8 +1291,12 @@ export default function ShoppingList() {
           to { opacity: 0; transform: scale(0.9) translateY(6px); }
         }
         @keyframes cardStagger {
-          from { opacity: 0; transform: translateY(12px) scale(0.985); }
+          from { opacity: 0; transform: translateY(16px) scale(0.98); }
           to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes cardExit {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to { opacity: 0; transform: translateY(-14px) scale(0.975); }
         }
         @keyframes toastIn {
           from { opacity: 0; transform: translateY(-14px) scale(0.98); }
@@ -1174,6 +1306,8 @@ export default function ShoppingList() {
           from { opacity: 1; transform: translateY(0) scale(1); }
           to { opacity: 0; transform: translateY(-16px) scale(0.97); }
         }
+        @keyframes drawBorder { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+        @keyframes fillFade { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
 
       <div
@@ -1249,6 +1383,7 @@ export default function ShoppingList() {
         {/* קבוצות */}
         {groups.map((g) => {
           const groupOpen = !collapsedGroups[g.type];
+          const groupClosing = !!closingGroups[g.type];
           const showSummary = g.bought.length > 4;
           const boughtOpen = !!completedOpen[g.type];
           return (
@@ -1260,10 +1395,8 @@ export default function ShoppingList() {
                 bought={g.bought.length}
                 labelActive={cfg.statusActive}
                 labelDone={cfg.statusDone}
-                open={groupOpen}
-                onToggle={() =>
-                  setCollapsedGroups((p) => ({ ...p, [g.type]: !p[g.type] }))
-                }
+                open={groupOpen && !groupClosing}
+                onToggle={() => toggleGroup(g.type, g.active.length)}
               />
 
               <Collapsible open={groupOpen}>
@@ -1277,8 +1410,11 @@ export default function ShoppingList() {
                     onToggleSub={toggleSub}
                     onEdit={openEdit}
                     removing={removing.has(it.id)}
+                    completing={completingIds.get(it.id) || null}
                     enterIndex={i}
-                    enterToken={`${g.type}-${groupOpen}`}
+                    count={g.active.length}
+                    closing={groupClosing}
+                    enterToken={`${g.type}-${openGen[g.type] || 0}`}
                   />
                 ))}
 
@@ -1291,7 +1427,12 @@ export default function ShoppingList() {
                         noun={cfg.key === "shopping" ? "פריטים" : "משימות"}
                         open={boughtOpen}
                         registerRef={register("sum-" + g.type)}
-                        onToggle={() => setCompletedOpen((p) => ({ ...p, [g.type]: !p[g.type] }))}
+                        onToggle={() => {
+                          flipSuppress.current = Date.now() + 1100;
+                          const willOpen = !completedOpen[g.type];
+                          setCompletedOpen((p) => ({ ...p, [g.type]: !p[g.type] }));
+                          if (willOpen) setCompletedOpenGen((p) => ({ ...p, [g.type]: (p[g.type] || 0) + 1 }));
+                        }}
                       />
                       <Collapsible open={boughtOpen}>
                         {g.bought.map((it, i) => (
@@ -1303,8 +1444,9 @@ export default function ShoppingList() {
                             onToggleSub={toggleSub}
                             onEdit={openEdit}
                             removing={removing.has(it.id)}
+                            completing={completingIds.get(it.id) || null}
                             enterIndex={i}
-                            enterToken={`${g.type}-b-${boughtOpen}`}
+                            enterToken={`${g.type}-b-${completedOpenGen[g.type] || 0}`}
                           />
                         ))}
                       </Collapsible>
@@ -1319,8 +1461,9 @@ export default function ShoppingList() {
                         onToggleSub={toggleSub}
                         onEdit={openEdit}
                         removing={removing.has(it.id)}
+                        completing={completingIds.get(it.id) || null}
                         enterIndex={i}
-                        enterToken={`${g.type}-bi-${groupOpen}`}
+                        enterToken={`${g.type}-bi-${openGen[g.type] || 0}`}
                       />
                     ))
                   )
