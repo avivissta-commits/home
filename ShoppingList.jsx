@@ -710,10 +710,10 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
   };
 
   const openCustom = () => {
-    setOpen(true);
+    setOpen(false);
     setCustom(true);
     setCustomVal("");
-    setTimeout(() => inputRef.current?.focus(), 60);
+    setTimeout(() => inputRef.current?.focus(), 40);
   };
   const startPress = () => {
     longPressed.current = false;
@@ -735,24 +735,44 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
   return (
     <div>
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBtnClick}
-          onPointerDown={startPress}
-          onPointerUp={endPress}
-          onPointerLeave={endPress}
-          onContextMenu={(e) => e.preventDefault()}
-          aria-label="בחר אייקון (לחיצה ארוכה לאימוג׳י משלך)"
-          className="shrink-0 grid place-items-center rounded-2xl text-xl transition-transform active:scale-90 select-none"
-          style={{
-            width: 48, height: 44,
-            touchAction: "manipulation",
-            ...glass({ background: "rgba(255,255,255,0.5)" }),
-            outline: open ? "2px solid rgba(74,150,110,0.7)" : "none",
-          }}
-        >
-          {emoji}
-        </button>
+        {custom ? (
+          <input
+            ref={inputRef}
+            value={customVal}
+            onChange={onCustomChange}
+            onBlur={() => setCustom(false)}
+            placeholder={emoji}
+            inputMode="text"
+            enterKeyHint="done"
+            aria-label="הקלד אימוג׳י משלך"
+            className="shrink-0 text-center rounded-2xl text-2xl outline-none"
+            style={{
+              width: 48, height: 44,
+              ...glass({ background: "rgba(255,255,255,0.7)" }),
+              outline: "2px solid rgba(74,150,110,0.7)",
+              caretColor: "#4a966e",
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={onBtnClick}
+            onPointerDown={startPress}
+            onPointerUp={endPress}
+            onPointerLeave={endPress}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label="בחר אייקון (לחיצה ארוכה לאימוג׳י משלך)"
+            className="shrink-0 grid place-items-center rounded-2xl text-xl transition-transform active:scale-90 select-none"
+            style={{
+              width: 48, height: 44,
+              touchAction: "manipulation",
+              ...glass({ background: "rgba(255,255,255,0.5)" }),
+              outline: open ? "2px solid rgba(74,150,110,0.7)" : "none",
+            }}
+          >
+            {emoji}
+          </button>
+        )}
         <input
           value={name}
           onChange={(e) => onName(e.target.value)}
@@ -766,21 +786,6 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
           className="mt-2 p-2 rounded-2xl space-y-1.5"
           style={glass({ background: "rgba(255,255,255,0.5)" })}
         >
-          {custom && (
-            <div className="flex items-center gap-2 pb-1.5 mb-1.5 border-b border-stone-200/70">
-              <input
-                ref={inputRef}
-                value={customVal}
-                onChange={onCustomChange}
-                placeholder="😀"
-                inputMode="text"
-                maxLength={8}
-                className="w-12 h-10 text-center rounded-xl outline-none text-2xl"
-                style={{ ...glass({ background: "rgba(255,255,255,0.7)" }), caretColor: "#4a966e" }}
-              />
-              <span className="text-[12px] text-stone-500">הקלד אימוג׳י משלך מהמקלדת (אחד בלבד)</span>
-            </div>
-          )}
           {groups.map((g) => (
             <div key={g.label} className="flex justify-between">
               {g.items.map((e) => {
@@ -789,7 +794,7 @@ function IconField({ emoji, name, onEmoji, onName, groups, placeholder }) {
                   <button
                     key={e}
                     type="button"
-                    onClick={() => { onEmoji(e); setOpen(false); setCustom(false); }}
+                    onClick={() => { onEmoji(e); setOpen(false); }}
                     className="grid place-items-center rounded-lg text-lg transition-transform active:scale-90"
                     style={{
                       width: 38, height: 38,
