@@ -1,108 +1,59 @@
-/**
- * Cloudflare Worker — backend ל"הכסף שלי".
- *
- * מקור האמת לנתוני המשתמש: Cloudflare KV (namespace בשם HAKESEF).
- * ה-Worker גם מגיש את האפליקציה (index.html) מתיקיית ה-assets, וגם עונה ל-/api/*.
- *
- * מודל הנתונים ב-KV:
- *   key   = "u:" + sha256(syncId)         // מזהה משתמש מוצפן (לא שומרים את הקוד עצמו)
- *   value = JSON { schema, rev, updatedAt, data }   // מסמך יחיד לכל משתמש
- *
- * Endpoints:
- *   GET  /api/data      (header x-sync-id) -> { empty:true } | { schema, rev, updatedAt, data }
- *   PUT  /api/data      (header x-sync-id, body { schema, rev, updatedAt, data })
- *                       -> 200 { rev, updatedAt }  |  409 { ...serverCopy }  (אם בשרת יש גרסה חדשה יותר)
- *   GET  /api/health    -> { ok:true }
- *
- * מדיניות conflict: last-write-wins לפי updatedAt. אם ל-Worker יש updatedAt חדש יותר
- * מזה שנשלח — מוחזר 409 עם עותק השרת, והלקוח מאמץ אותו (ומראה טוסט "סונכרן ממכשיר אחר").
- */
+/* ============================================================
+ *  Cloudflare Worker — סנכרון "הבית צריך"
+ *  GET   -> מחזיר את הרשימה המשותפת (מ-KV; אם ריק, את ה-seed)
+ *  PUT   -> שומר את הרשימה ל-KV  (גוף: {"items":[...]})
+ *  כולל כותרות CORS כדי שיעבוד מ-GitHub Pages.
+ *  דורש KV binding בשם:  LIST_KV
+ * ============================================================ */
+
+const SEED = {"items": [{"name": "כיבוס שמיכות סלון", "emoji": "🛋️", "category": "ניקיון", "type": "קבועים", "priority": "low", "note": "", "who": "אביב", "id": "n1782054394930", "kind": "task", "status": "active", "updated": "21.06.26"}, {"name": "להשקות עציצים", "emoji": "🪴", "category": "כללי", "type": "קבועים", "priority": "high", "note": "", "who": "אביב", "id": "n1782054361984", "kind": "task", "status": "active", "updated": "21.06.26"}, {"name": "ריחן זלנסקי", "emoji": "🕯️", "category": "בית", "type": "משתנים", "priority": "low", "note": "", "who": null, "id": "n1782054336141", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "אקונומיקה שפריץ", "emoji": "🧻", "category": "ניקיון", "type": "קבועים", "priority": "low", "note": "", "who": null, "id": "n1782054321273", "kind": "shopping", "status": "done", "updated": "21.06.26"}, {"name": "הזמנה משיין עלי (מתלה מטאטא ועוד)", "emoji": "🛒", "category": "בית", "type": "משתנים", "priority": "low", "note": "", "who": null, "id": "n1782054307384", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "מוט בלנדר", "emoji": "🛒", "category": "אוכל", "type": "משתנים", "priority": "low", "note": "", "who": null, "id": "n1782054296487", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "תבלינים", "emoji": "🍚", "category": "אוכל", "type": "משתנים", "priority": "low", "note": "", "who": null, "id": "n1782054290247", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "חלקי חילוף mova", "emoji": "🔨", "category": "בית", "type": "משתנים", "priority": "medium", "note": "", "who": null, "id": "n1782054275403", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "מוט כושר (מתח)", "emoji": "🛒", "category": "בית", "type": "משתנים", "priority": "medium", "note": "", "who": null, "id": "n1782054262114", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "טונייט", "emoji": "💊", "category": "תרופות", "type": "משתנים", "priority": "high", "note": "", "who": null, "id": "n1782054250803", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "כביסכל", "emoji": "🧴", "category": "ניקיון", "type": "קבועים", "priority": "low", "note": "", "who": null, "id": "n1782054232083", "kind": "shopping", "status": "done", "updated": "21.06.26"}, {"name": "שמן זית", "emoji": "🔋", "category": "אוכל", "type": "קבועים", "priority": "low", "note": "", "who": null, "id": "n1782054214570", "kind": "shopping", "status": "done", "updated": "21.06.26"}, {"name": "ביצים", "emoji": "🍚", "category": "אוכל", "type": "קבועים", "priority": "low", "note": "", "who": null, "id": "n1782054205091", "kind": "shopping", "status": "done", "updated": "21.06.26"}, {"name": "חומר רצפה mova", "emoji": "🧴", "category": "ניקיון", "type": "קבועים", "priority": "medium", "note": "", "who": null, "id": "n1782054185281", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "חוט דנטאלי", "emoji": "🪥", "category": "טיפוח", "type": "קבועים", "priority": "medium", "note": "", "who": null, "id": "n1782054172435", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"name": "קפה", "emoji": "☕", "category": "אוכל", "type": "קבועים", "priority": "low", "note": "", "who": null, "id": "n1782054144977", "kind": "shopping", "status": "active", "updated": "21.06.26"}, {"kind": "shopping", "id": "i1", "name": "נייר סופג", "emoji": "🧻", "category": "ניקיון", "type": "קבועים", "priority": "high", "status": "active", "updated": "21.06.26", "note": "לקנות 2 חבילות גדולות, רק מהמותג הירוק"}, {"kind": "shopping", "id": "i2", "name": "חבילת טישו", "emoji": "🧻", "category": "ניקיון", "type": "קבועים", "priority": "medium", "status": "active", "updated": "21.06.26"}, {"kind": "shopping", "id": "i3", "name": "קשים מתכת", "emoji": "🛒", "category": "בית", "type": "משתנים", "priority": "low", "status": "active", "updated": "21.06.26"}, {"kind": "shopping", "id": "i4", "name": "דלי מגבונים", "emoji": "🧽", "category": "ניקיון", "type": "קבועים", "priority": "low", "status": "active", "updated": "21.06.26"}, {"kind": "shopping", "id": "i5", "name": "סבון כלים", "emoji": "🧴", "category": "ניקיון", "type": "קבועים", "priority": "medium", "status": "active", "updated": "20.06.26"}, {"kind": "shopping", "id": "b1", "name": "נייר טואלט", "emoji": "🧻", "category": "ניקיון", "type": "קבועים", "priority": "low", "status": "done", "updated": "19.06.26"}, {"kind": "shopping", "id": "b2", "name": "מרכך כביסה", "emoji": "🧴", "category": "ניקיון", "type": "קבועים", "priority": "low", "status": "done", "updated": "19.06.26"}, {"kind": "shopping", "id": "b3", "name": "אבקת כביסה", "emoji": "🧺", "category": "ניקיון", "type": "קבועים", "priority": "medium", "status": "done", "updated": "18.06.26"}, {"kind": "shopping", "id": "b4", "name": "ספוגות", "emoji": "🧽", "category": "ניקיון", "type": "קבועים", "priority": "low", "status": "done", "updated": "18.06.26"}, {"kind": "shopping", "id": "b5", "name": "מטליות", "emoji": "🧻", "category": "ניקיון", "type": "קבועים", "priority": "low", "status": "done", "updated": "17.06.26"}, {"kind": "shopping", "id": "b6", "name": "שקיות זבל", "emoji": "🗑️", "category": "בית", "type": "קבועים", "priority": "low", "status": "done", "updated": "17.06.26"}, {"kind": "shopping", "id": "v1", "name": "אקמול", "emoji": "💊", "category": "תרופות", "type": "משתנים", "priority": "high", "status": "active", "updated": "21.06.26"}, {"kind": "task", "id": "t1", "name": "כביסה", "emoji": "🧺", "category": "כביסה", "type": "קבועים", "priority": "high", "status": "active", "updated": "21.06.26", "who": "אביב", "note": "המכונה כבר מלאה"}, {"kind": "task", "id": "t3", "name": "שטיפת כלים", "emoji": "🧽", "category": "ניקיון", "type": "קבועים", "priority": "high", "status": "active", "updated": "21.06.26", "who": "אביב"}, {"kind": "task", "id": "t4", "name": "ניקיון שירותים", "emoji": "🚿", "category": "ניקיון", "type": "קבועים", "priority": "medium", "status": "active", "updated": "21.06.26", "who": "יוסי"}, {"kind": "task", "id": "t5", "name": "קיזוז חשבונות", "emoji": "🧾", "category": "חשבונות", "type": "קבועים", "priority": "medium", "status": "active", "updated": "21.06.26", "who": "כולם", "note": "עד ה-25 לחודש"}, {"kind": "task", "id": "td1", "name": "ניגוב אבק", "emoji": "🧹", "category": "ניקיון", "type": "קבועים", "priority": "low", "status": "done", "updated": "19.06.26", "who": "אביב"}, {"kind": "task", "id": "td2", "name": "הוצאת זבל", "emoji": "🗑️", "category": "ניקיון", "type": "קבועים", "priority": "low", "status": "done", "updated": "19.06.26", "who": "יוסי"}, {"kind": "task", "id": "t2", "name": "קיפול בגדים", "emoji": "👕", "category": "סידור", "type": "קבועים", "priority": "medium", "status": "active", "updated": "21.06.26", "who": "יוסי"}, {"kind": "task", "id": "t7", "name": "סידור ארון קיץ", "emoji": "📦", "category": "סידור", "type": "משתנים", "priority": "high", "status": "active", "updated": "21.06.26", "who": "אביב"}]};
 
 const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,PUT,OPTIONS",
-  "access-control-allow-headers": "content-type,x-sync-id",
-  "access-control-max-age": "86400",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Accept",
+  "Access-Control-Max-Age": "86400",
 };
 
-function json(obj, status = 200) {
+function json(obj, status) {
   return new Response(JSON.stringify(obj), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", ...CORS },
+    status: status || 200,
+    headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
 
-async function sha256Hex(str) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function handleApi(request, env, url) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-
-  if (url.pathname === "/api/health") return json({ ok: true, at: Date.now() });
-
-  if (url.pathname !== "/api/data") return json({ error: "not found" }, 404);
-
-  if (!env.HAKESEF) return json({ error: "KV namespace HAKESEF is not bound" }, 500);
-
-  const syncId = request.headers.get("x-sync-id") || "";
-  if (syncId.length < 6) return json({ error: "missing or too-short sync id" }, 400);
-  const key = "u:" + (await sha256Hex(syncId));
-
-  // ---- GET: משיכת הנתונים ----
-  if (request.method === "GET") {
-    const raw = await env.HAKESEF.get(key);
-    if (!raw) return json({ empty: true });
-    return new Response(raw, { headers: { "content-type": "application/json; charset=utf-8", ...CORS } });
-  }
-
-  // ---- PUT: שמירת הנתונים ----
-  if (request.method === "PUT") {
-    let body;
-    try { body = await request.json(); } catch (_) { return json({ error: "invalid json" }, 400); }
-    if (!body || typeof body !== "object" || typeof body.data !== "object" || body.data === null) {
-      return json({ error: "body must be { schema, rev, updatedAt, data }" }, 400);
-    }
-
-    const incomingUpdated = +body.updatedAt || 0;
-    const existingRaw = await env.HAKESEF.get(key);
-    const existing = existingRaw ? JSON.parse(existingRaw) : null;
-
-    // conflict: בשרת יש גרסה חדשה יותר -> דחייה + החזרת עותק השרת
-    if (existing && (+existing.updatedAt || 0) > incomingUpdated) {
-      return json(existing, 409);
-    }
-
-    const rev = Math.max((existing && +existing.rev) || 0, +body.rev || 0);
-    const envelope = {
-      schema: +body.schema || 1,
-      rev,
-      updatedAt: incomingUpdated || Date.now(),
-      data: body.data,
-    };
-    await env.HAKESEF.put(key, JSON.stringify(envelope));
-    return json({ rev: envelope.rev, updatedAt: envelope.updatedAt });
-  }
-
-  return json({ error: "method not allowed" }, 405);
-}
-
 export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-
-    // API
-    if (url.pathname.startsWith("/api/")) {
-      try {
-        return await handleApi(request, env, url);
-      } catch (err) {
-        return json({ error: "server error", detail: String(err && err.message || err) }, 500);
-      }
+  async fetch(request, env) {
+    // preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS });
     }
 
-    // כל השאר -> הקבצים הסטטיים (האפליקציה). דורש binding בשם ASSETS ב-wrangler.toml.
-    if (env.ASSETS) return env.ASSETS.fetch(request);
-    return new Response("Not found", { status: 404 });
+    const KEY = "list";
+
+    try {
+      if (request.method === "GET") {
+        const stored = await env.LIST_KV.get(KEY);
+        const body = stored != null ? stored : JSON.stringify(SEED);
+        return new Response(body, {
+          headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+      }
+
+      if (request.method === "PUT" || request.method === "POST") {
+        const text = await request.text();
+        let parsed;
+        try { parsed = JSON.parse(text); } catch (e) { return json({ error: "invalid json" }, 400); }
+        if (!parsed || !Array.isArray(parsed.items)) {
+          return json({ error: "items must be an array" }, 400);
+        }
+        await env.LIST_KV.put(KEY, JSON.stringify({ items: parsed.items }));
+        return json({ ok: true, count: parsed.items.length });
+      }
+
+      return json({ error: "method not allowed" }, 405);
+    } catch (e) {
+      return json({ error: String(e) }, 500);
+    }
   },
 };
