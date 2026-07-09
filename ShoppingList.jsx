@@ -24,6 +24,8 @@ const PRIORITY = {
   lowest: { label: "פחות דחוף", dot: "#9ca3af", text: "#6b7280", bg: "rgba(156, 163, 175, 0.16)", border: "rgba(156,163,175,0.35)", rank: 3 },
 };
 const PRIORITY_KEYS = ["high", "medium", "low", "lowest"];
+// סדר תצוגה בכפתורים — ברירת המחדל ("רגיל") ראשונה = הימנית ביותר ב-RTL
+const PRIORITY_UI_ORDER = ["low", "medium", "high", "lowest"];
 
 const seedItems = [
   {"name": "כיבוס שמיכות סלון", "emoji": "🛋️", "category": "ניקיון", "type": "קבועים", "priority": "low", "note": "", "who": "אביב", "id": "n1782054394930", "kind": "task", "status": "active", "updated": "21.06.26"},
@@ -255,6 +257,38 @@ function useFlip(suppressRef) {
 }
 
 /* ---------------------------- רכיבים ------------------------------ */
+
+/* מחוות לחיצה אמיתית — עובדת גם ב-iOS (שם :active לא נתפס) */
+function usePress(scale = 0.93) {
+  const [down, setDown] = useState(false);
+  const handlers = {
+    onPointerDown: () => setDown(true),
+    onPointerUp: () => setDown(false),
+    onPointerLeave: () => setDown(false),
+    onPointerCancel: () => setDown(false),
+  };
+  const style = {
+    transform: down ? `scale(${scale})` : "scale(1)",
+    filter: down ? "brightness(0.94)" : "none",
+    transition: "transform 130ms cubic-bezier(0.22,1,0.36,1), filter 130ms ease",
+  };
+  return [handlers, style];
+}
+
+function Pressable({ as = "button", scale = 0.93, style, children, disabled, ...rest }) {
+  const [handlers, pressStyle] = usePress(scale);
+  const Tag = as;
+  return (
+    <Tag
+      {...rest}
+      {...(disabled ? {} : handlers)}
+      disabled={disabled}
+      style={{ ...style, ...(disabled ? {} : pressStyle) }}
+    >
+      {children}
+    </Tag>
+  );
+}
 
 const glass = (extra = {}) => ({
   background: "rgba(255,255,255,0.55)",
@@ -748,10 +782,11 @@ function Pills({ options, value, onChange, multi }) {
   return (
     <div className="flex flex-wrap gap-2">
       {options.map((o) => (
-        <button
+        <Pressable
           key={o}
+          scale={0.9}
           onClick={() => toggle(o)}
-          className="rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-transform active:scale-95"
+          className="rounded-full px-3.5 py-1.5 text-[13px] font-medium"
           style={
             active(o)
               ? { background: "rgba(74,150,110,0.92)", color: "#fff", border: "1px solid rgba(74,150,110,0.92)" }
@@ -759,7 +794,7 @@ function Pills({ options, value, onChange, multi }) {
           }
         >
           {o}
-        </button>
+        </Pressable>
       ))}
     </div>
   );
@@ -1107,7 +1142,7 @@ export default function ShoppingList() {
   const [removing, setRemoving] = useState(new Set());
 
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filters, setFilters] = useState({ type: null, categories: [], priority: null, status: "all", who: [] });
+  const [filters, setFilters] = useState({ type: null, categories: [], priority: [], status: "all", who: [] });
 
   const [editing, setEditing] = useState(null);
   const [editOriginal, setEditOriginal] = useState(null);
@@ -1228,6 +1263,8 @@ export default function ShoppingList() {
   }, []);
 
 
+  const emptyFilters = { type: null, categories: [], priority: [], status: "all", who: [] };
+
   const switchTab = (key) => {
     if (key === tab) return;
     const from = TABS.findIndex((t) => t.key === tab);
@@ -1245,7 +1282,8 @@ export default function ShoppingList() {
       if (search && !it.name.includes(search.trim())) return false;
       if (filters.type && it.type !== filters.type) return false;
       if (filters.categories.length && !filters.categories.includes(it.category)) return false;
-      if (filters.priority && it.priority !== filters.priority) return false;
+      const prioFilter = Array.isArray(filters.priority) ? filters.priority : (filters.priority ? [filters.priority] : []);
+      if (prioFilter.length && !prioFilter.includes(it.priority)) return false;
       if (filters.who.length && !filters.who.includes(it.who)) return false;
       if (filters.status === "active" && it.status !== "active") return false;
       if (filters.status === "done" && it.status !== "done") return false;
@@ -1279,7 +1317,7 @@ export default function ShoppingList() {
   const activeFilterCount =
     (filters.type ? 1 : 0) +
     filters.categories.length +
-    (filters.priority ? 1 : 0) +
+    ((Array.isArray(filters.priority) ? filters.priority.length : (filters.priority ? 1 : 0)) ? 1 : 0) +
     filters.who.length +
     (filters.status !== "all" ? 1 : 0);
 
@@ -1564,16 +1602,17 @@ export default function ShoppingList() {
         }
         @keyframes drawBorder { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
         @keyframes fillFade { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes fieldIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-        .formStagger > * { animation: fieldIn 240ms ease-out both; }
-        .formStagger > *:nth-child(1){animation-delay:20ms}
-        .formStagger > *:nth-child(2){animation-delay:70ms}
-        .formStagger > *:nth-child(3){animation-delay:120ms}
-        .formStagger > *:nth-child(4){animation-delay:170ms}
-        .formStagger > *:nth-child(5){animation-delay:210ms}
-        .formStagger > *:nth-child(6){animation-delay:250ms}
-        .formStagger > *:nth-child(7){animation-delay:290ms}
-        .formStagger > *:nth-child(8){animation-delay:330ms}
+        @keyframes fieldIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+        .formStagger > * { animation: fieldIn 300ms cubic-bezier(0.22,1,0.36,1) both; }
+        .formStagger > *:nth-child(1){animation-delay:40ms}
+        .formStagger > *:nth-child(2){animation-delay:120ms}
+        .formStagger > *:nth-child(3){animation-delay:200ms}
+        .formStagger > *:nth-child(4){animation-delay:280ms}
+        .formStagger > *:nth-child(5){animation-delay:360ms}
+        .formStagger > *:nth-child(6){animation-delay:440ms}
+        .formStagger > *:nth-child(7){animation-delay:520ms}
+        .formStagger > *:nth-child(8){animation-delay:600ms}
+        .formStagger > *:nth-child(9){animation-delay:680ms}
       `}</style>
 
       <div
@@ -1763,24 +1802,29 @@ export default function ShoppingList() {
             </svg>
           </button>
 
-          {/* תפריט טאבים — Liquid Glass */}
-          <div className="flex gap-1 rounded-full p-1" style={glass({ background: "rgba(255,255,255,0.55)" })}>
+          {/* תפריט טאבים — Liquid Glass עם סמן מחליק */}
+          <div className="relative flex gap-1 rounded-full p-1" style={glass({ background: "rgba(255,255,255,0.55)" })}>
+            <div
+              aria-hidden
+              className="absolute top-1 bottom-1 rounded-full"
+              style={{
+                right: 4,
+                width: "calc(50% - 6px)",
+                background: "linear-gradient(180deg, #4ea27a, #3c7f5f)",
+                boxShadow: "0 6px 16px -6px rgba(60,127,95,0.6), inset 0 1px 0 rgba(255,255,255,0.35)",
+                transform: tab === "shopping" ? "translateX(0)" : "translateX(calc(-100% - 4px))",
+                transition: "transform 280ms cubic-bezier(0.22,1,0.36,1)",
+                pointerEvents: "none",
+              }}
+            />
             {TABS.map((t) => {
               const activeTab = t.key === tab;
               return (
                 <button
                   key={t.key}
                   onClick={() => switchTab(t.key)}
-                  className="flex items-center gap-1.5 rounded-full px-4 h-10 text-[14px] font-bold transition-transform active:scale-95"
-                  style={
-                    activeTab
-                      ? {
-                          background: "linear-gradient(180deg, #4ea27a, #3c7f5f)",
-                          color: "#fff",
-                          boxShadow: "0 6px 16px -6px rgba(60,127,95,0.6), inset 0 1px 0 rgba(255,255,255,0.35)",
-                        }
-                      : { background: "transparent", color: "#5a6b62" }
-                  }
+                  className="relative z-10 flex-1 flex items-center justify-center gap-1.5 rounded-full px-4 h-10 text-[14px] font-bold transition-transform active:scale-95"
+                  style={{ background: "transparent", color: activeTab ? "#fff" : "#5a6b62", transition: "color 240ms ease" }}
                 >
                   <span className="text-base">{t.icon}</span>
                   {t.label}
@@ -1810,16 +1854,19 @@ export default function ShoppingList() {
           )}
           <div>
             <div className="text-[12px] font-semibold text-stone-500 mb-2">חשיבות</div>
-            <Pills options={PRIORITY_KEYS.map((k) => PRIORITY[k].label)}
-              value={filters.priority ? PRIORITY[filters.priority].label : null}
-              onChange={(label) => {
-                const key = Object.keys(PRIORITY).find((k) => PRIORITY[k].label === label) || null;
-                setFilters((f) => ({ ...f, priority: key }));
-              }} />
+            <Pills
+              options={PRIORITY_UI_ORDER.map((k) => PRIORITY[k].label)}
+              value={(Array.isArray(filters.priority) ? filters.priority : []).map((k) => PRIORITY[k]?.label).filter(Boolean)}
+              multi
+              onChange={(labels) => {
+                const keys = labels.map((l) => Object.keys(PRIORITY).find((k) => PRIORITY[k].label === l)).filter(Boolean);
+                setFilters((f) => ({ ...f, priority: keys }));
+              }}
+            />
           </div>
           <div>
             <div className="text-[12px] font-semibold text-stone-500 mb-2">סטטוס</div>
-            <Pills options={[cfg.statusActive, cfg.statusDone, "הכל"]}
+            <Pills options={["הכל", cfg.statusActive, cfg.statusDone]}
               value={{ active: cfg.statusActive, done: cfg.statusDone, all: "הכל" }[filters.status]}
               onChange={(label) => {
                 const map = { [cfg.statusActive]: "active", [cfg.statusDone]: "done", "הכל": "all" };
@@ -1827,20 +1874,22 @@ export default function ShoppingList() {
               }} />
           </div>
           <div className="flex gap-2 pt-2">
-            <button
+            <Pressable
+              scale={0.96}
               onClick={() => setFilters(emptyFilters)}
               className="flex-1 rounded-2xl h-11 font-semibold text-stone-600"
               style={glass({ background: "rgba(255,255,255,0.5)" })}
             >
               נקה סינון
-            </button>
-            <button
+            </Pressable>
+            <Pressable
+              scale={0.96}
               onClick={() => setFilterOpen(false)}
               className="flex-1 rounded-2xl h-11 font-bold text-white"
               style={{ background: "linear-gradient(180deg,#4ea27a,#3c7f5f)" }}
             >
               החל
-            </button>
+            </Pressable>
           </div>
         </div>
       </Sheet>
@@ -1874,7 +1923,7 @@ export default function ShoppingList() {
             <div>
               <div className="text-[12px] font-semibold text-stone-500 mb-2">חשיבות</div>
               <Pills
-                options={PRIORITY_KEYS.map((k) => PRIORITY[k].label)}
+                options={PRIORITY_UI_ORDER.map((k) => PRIORITY[k].label)}
                 value={PRIORITY[editing.priority].label}
                 onChange={(label) => {
                   const key = Object.keys(PRIORITY).find((k) => PRIORITY[k].label === label);
@@ -1884,12 +1933,14 @@ export default function ShoppingList() {
             </div>
             <FrequencyField value={editing.frequency || "none"} onChange={(frequency) => updateEditing({ frequency })} />
             <NotesField value={editing.note || ""} onChange={(note) => updateEditing({ note })} />
+            <div style={{ height: 1, background: "rgba(120,140,130,0.22)", borderRadius: 1 }} />
             <SubListEditor subs={editing.subs || []} onChange={(subs) => updateEditing({ subs })} />
             <div className="flex gap-2 pt-1">
-              <button
+              <Pressable
+                scale={0.96}
                 onClick={confirmEdit}
                 disabled={!editDirty}
-                className="flex-1 rounded-2xl h-11 font-bold text-white transition-transform active:scale-[0.98]"
+                className="flex-1 rounded-2xl h-11 font-bold text-white"
                 style={
                   editDirty
                     ? { background: "linear-gradient(180deg,#4ea27a,#3c7f5f)", cursor: "pointer" }
@@ -1897,14 +1948,15 @@ export default function ShoppingList() {
                 }
               >
                 אשר
-              </button>
-              <button
+              </Pressable>
+              <Pressable
+                scale={0.96}
                 onClick={() => remove(editing.id)}
-                className="flex-1 rounded-2xl h-11 font-bold transition-transform active:scale-[0.98]"
+                className="flex-1 rounded-2xl h-11 font-bold"
                 style={{ background: "rgba(255,99,99,0.15)", color: "#b42318", border: "1px solid rgba(239,68,68,0.3)" }}
               >
                 מחק
-              </button>
+              </Pressable>
             </div>
           </div>
         )}
@@ -1916,14 +1968,16 @@ export default function ShoppingList() {
           {/* בורר קניות/מטלות — סמן ירוק מחליק */}
           <div className="relative flex p-1 rounded-2xl" style={glass({ background: "rgba(255,255,255,0.5)" })}>
             <div
+              aria-hidden
               className="absolute top-1 bottom-1 rounded-xl"
               style={{
+                right: 4,
                 width: "calc(50% - 4px)",
-                insetInlineEnd: 4,
                 background: "linear-gradient(180deg,#4ea27a,#3c7f5f)",
                 boxShadow: "0 4px 12px -5px rgba(60,127,95,0.6)",
                 transform: addKind === "shopping" ? "translateX(0)" : "translateX(-100%)",
                 transition: "transform 260ms cubic-bezier(0.22,1,0.36,1)",
+                pointerEvents: "none",
               }}
             />
             {TABS.map((t) => {
@@ -1974,7 +2028,7 @@ export default function ShoppingList() {
             <div>
               <div className="text-[12px] font-semibold text-stone-500 mb-2">חשיבות</div>
               <Pills
-                options={PRIORITY_KEYS.map((k) => PRIORITY[k].label)}
+                options={PRIORITY_UI_ORDER.map((k) => PRIORITY[k].label)}
                 value={PRIORITY[draft.priority].label}
                 onChange={(label) => {
                   const key = Object.keys(PRIORITY).find((k) => PRIORITY[k].label === label);
@@ -1984,10 +2038,11 @@ export default function ShoppingList() {
             </div>
             <FrequencyField value={draft.frequency} onChange={(frequency) => setDraft((d) => ({ ...d, frequency }))} />
             <NotesField value={draft.note} onChange={(note) => setDraft((d) => ({ ...d, note }))} />
+            <div style={{ height: 1, background: "rgba(120,140,130,0.22)", borderRadius: 1 }} />
             <SubListEditor subs={draft.subs || []} onChange={(subs) => setDraft((d) => ({ ...d, subs }))} />
-            <button onClick={addItem} className="w-full rounded-2xl h-11 font-bold text-white" style={{ background: "linear-gradient(180deg,#4ea27a,#3c7f5f)" }}>
+            <Pressable scale={0.96} onClick={addItem} className="w-full rounded-2xl h-11 font-bold text-white" style={{ background: "linear-gradient(180deg,#4ea27a,#3c7f5f)" }}>
               הוסף לרשימה
-            </button>
+            </Pressable>
           </div>
         </div>
       </Sheet>
